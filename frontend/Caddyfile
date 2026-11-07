@@ -1,0 +1,13 @@
+# SITE_ADDRESS is ":80" by default (plain HTTP). Set it to a domain pointing at the VM
+# and Caddy gets and renews a TLS certificate on its own.
+{$SITE_ADDRESS} {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
