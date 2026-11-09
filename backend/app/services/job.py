@@ -1,4 +1,3 @@
-
 from collections.abc import Callable
 from typing import Any
 
@@ -24,9 +23,7 @@ def transition_job(job: Job, new_status: JobStatus) -> None:
     allowed_states = ALLOWED_TRANSITIONS[job.status]
 
     if new_status not in allowed_states:
-        raise ValueError(
-            f"Invalid job status transition: {job.status} -> {new_status}"
-        )
+        raise ValueError(f"Invalid job status transition: {job.status} -> {new_status}")
 
     job.status = new_status
 

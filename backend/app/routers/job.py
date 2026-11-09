@@ -40,26 +40,16 @@ def get_jobs(
     """Retrieve a paginated list of jobs."""
 
     # Build the database query.
-    statement = (
-        select(Job)
-        .order_by(Job.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    statement = select(Job).order_by(Job.created_at.desc()).offset(offset).limit(limit)
 
     # Retrieve Job objects from PostgreSQL.
     jobs = db.scalars(statement).all()
 
     # Convert SQLAlchemy Job objects into Pydantic JobResponse objects.
-    job_responses = [
-        JobResponse.model_validate(job)
-        for job in jobs
-    ]
+    job_responses = [JobResponse.model_validate(job) for job in jobs]
 
     # Count the total number of jobs.
-    total = db.scalar(
-        select(func.count()).select_from(Job)
-    )
+    total = db.scalar(select(func.count()).select_from(Job))
 
     # Return the response.
     return JobListResponse(

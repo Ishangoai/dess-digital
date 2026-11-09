@@ -13,8 +13,8 @@ def create_test_job(status: JobStatus = JobStatus.PENDING) -> Job:
     )
 
 
-
 # VALID STATE TRANSITIONS
+
 
 def test_pending_job_can_transition_to_running():
     job = create_test_job()
@@ -40,8 +40,8 @@ def test_running_job_can_transition_to_failed():
     assert job.status == JobStatus.FAILED
 
 
-
 # INVALID STATE TRANSITIONS
+
 
 def test_pending_job_cannot_transition_to_completed():
     job = create_test_job()
