@@ -24,7 +24,6 @@
     let error = $state<string | null>(null);
 
     async function fetchJobs() {
-        loading = true;
         error = null;
 
         try {
@@ -48,8 +47,19 @@
     }
 
     onMount(() => {
+    // Fetch jobs immediately when the page loads.
+    fetchJobs();
+
+    // Fetch jobs again every 5 seconds.
+    const intervalId = setInterval(() => {
         fetchJobs();
-    });
+    }, 5000);
+
+    // Stop polling when the user leaves the page.
+    return () => {
+        clearInterval(intervalId);
+    };
+});
 </script>
 
 <svelte:head>
