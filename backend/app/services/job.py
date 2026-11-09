@@ -6,7 +6,6 @@ from fastapi import BackgroundTasks
 
 from app.models.job import Job, JobStatus
 
-
 # Define the permitted state transitions.
 ALLOWED_TRANSITIONS = {
     JobStatus.PENDING: {JobStatus.RUNNING},

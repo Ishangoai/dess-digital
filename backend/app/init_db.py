@@ -1,5 +1,4 @@
 from app.db import Base, engine
-from app.models.job import Job
 
 
 def init_db() -> None:
