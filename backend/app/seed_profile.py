@@ -1,10 +1,6 @@
-"""Load a Minutes Profile file (YAML/JSON) into the database as a new version.
+"""Load a minutes profile file into the database.
 
-The DESS Standard text is client material and lives in the gitignored reference/ folder:
-
-    uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
-
-Re-running with unchanged content does not create a new version.
+Usage: uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
 """
 
 import argparse

@@ -1,15 +1,6 @@
-"""Schema for a Minutes Profile version: the configuration the minuting pipeline applies.
+"""Minutes Profile content: Minuting Policy (MP1-MP9), Writing Style (WS1-WS6) and presentation.
 
-A profile has 15 dimensions: Minuting Policy MP1-MP9 (what goes into the record and in what
-depth) and Writing Style WS1-WS6 (how it is expressed). Plus hard floors no customisation can
-override, structured presentation settings (WS6 as data), and the operational instructions
-given to the model.
-
-The DESS Standard text is client material and is NOT stored in this repo: it is loaded from a
-local YAML/JSON file (see app.seed_profile). The JSON schema of this model is committed next to
-this file and regenerated with:
-
-    uv run python -m app.minutes.profile_content --write
+Regenerate the committed JSON schema with: uv run python -m app.minutes.profile_content --write
 """
 
 import argparse
@@ -53,17 +44,13 @@ STYLE_CODES = [c for c in DimensionCode if c.startswith("WS")]
 
 
 class ProvisionKind(StrEnum):
-    """The four kinds of provision a profile must keep distinct."""
-
-    EVIDENTIAL_FUNDAMENTAL = "evidential_fundamental"  # fixed; cannot be customised away
+    EVIDENTIAL_FUNDAMENTAL = "evidential_fundamental"  # fixed, cannot be customised
     REQUIREMENT = "requirement"  # legal, regulatory or organisational
-    PROFESSIONAL_DEFAULT = "professional_default"  # DESS Standard default
-    PREFERENCE = "preference"  # customisable house preference
+    PROFESSIONAL_DEFAULT = "professional_default"
+    PREFERENCE = "preference"
 
 
 class Provenance(StrEnum):
-    """Where a provision came from (inferred ones stay provisional until confirmed)."""
-
     DESS_STANDARD = "dess_standard"
     INFERRED = "inferred"
     EXPLICIT_REQUIREMENT = "explicit_requirement"
@@ -84,15 +71,13 @@ class Dimension(_Strict):
     purpose: str = Field(min_length=1)
     default_standard: str = Field(min_length=1, description="The standard this profile applies.")
     application: str | None = Field(default=None, description="How the standard is applied.")
-    customisation_scope: str | None = Field(
-        default=None, description="Legitimate variations; never overrides the hard floors."
-    )
+    customisation_scope: str | None = Field(default=None, description="Allowed variations.")
     rationale: str | None = Field(default=None, description="Background; not sent to the model.")
     provisions: list[Provision] = Field(default_factory=list)
 
 
 class StageGuidance(_Strict):
-    """Optional per-stage guidance appended to the relevant pipeline call."""
+    """Extra instructions for each pipeline stage."""
 
     evidence: str | None = None
     policy: str | None = None
@@ -103,11 +88,8 @@ class StageGuidance(_Strict):
 
 
 class OperationalInstructions(_Strict):
-    core: str = Field(min_length=1, description="Core minuting instructions given to the model.")
+    core: str = Field(min_length=1, description="Main instructions given to the model.")
     stages: StageGuidance = Field(default_factory=StageGuidance)
-
-
-# --- WS6 presentation as structured style data ---------------------------------------------
 
 
 class DateStyle(StrEnum):
@@ -119,7 +101,7 @@ class DateStyle(StrEnum):
 class NumberingScheme(StrEnum):
     AGENDA = "agenda"  # reuse the agenda's item numbers
     SEQUENTIAL = "sequential"  # 1, 2, 3 in minute order
-    MINUTE_REFERENCE = "minute_reference"  # e.g. B/26/01 using minute_reference_prefix
+    MINUTE_REFERENCE = "minute_reference"  # e.g. B/26/01
 
 
 class ParagraphNumbering(StrEnum):
@@ -138,7 +120,7 @@ class AttendanceLayout(StrEnum):
 
 
 class StyleMap(_Strict):
-    """Word paragraph/table style names used by the exporter (fall back to Normal if absent)."""
+    """Word style names used in the exported document."""
 
     title: str = "Title"
     heading: str = "Heading 1"
@@ -162,9 +144,6 @@ class PresentationSettings(_Strict):
     comment_initials: str = "DM"
 
 
-# --- the profile ---------------------------------------------------------------------------
-
-
 class ProfileContent(_Strict):
     model_config = ConfigDict(extra="forbid", title="MinutesProfileContent")
 
@@ -172,9 +151,7 @@ class ProfileContent(_Strict):
     name: str = Field(min_length=1)
     description: str | None = None
     jurisdiction: Literal["UK"] = "UK"
-    hard_floors: list[str] = Field(
-        min_length=1, description="Professional floor that no customisation may override."
-    )
+    hard_floors: list[str] = Field(min_length=1, description="Rules no customisation can override.")
     minuting_policy: list[Dimension]
     writing_style: list[Dimension]
     presentation: PresentationSettings = Field(default_factory=PresentationSettings)
@@ -212,11 +189,8 @@ def _check_codes(dims: list[Dimension], expected: list[DimensionCode]) -> list[D
     return dims
 
 
-# --- helpers -------------------------------------------------------------------------------
-
-
 def content_hash(content: ProfileContent) -> str:
-    """Stable sha256 of the content, used to make seeding idempotent."""
+    """sha256 of the content, used to skip re-seeding identical profiles."""
     canonical = json.dumps(content.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
 
@@ -238,7 +212,7 @@ def export_json_schema() -> dict[str, Any]:
 
 
 def render_profile(content: ProfileContent) -> str:
-    """Markdown rendering of the profile for the model (rationale is left out)."""
+    """Profile as markdown for the model prompt (without rationale)."""
     lines = [f"# Minutes Profile: {content.name}", ""]
     if content.description:
         lines += [content.description, ""]

@@ -1,10 +1,4 @@
-"""Minutes Profile versioning rules.
-
-- Version content is immutable; a change is a new version (numbered 1, 2, 3 ... per profile).
-- Status lifecycle: proposed -> reviewed -> confirmed, or proposed/reviewed -> withdrawn.
-- The active version is the confirmed version with the highest number (derived, not stored).
-- Non-seed versions may not change the hard floors or evidential fundamentals of their parent.
-"""
+"""Minutes profile versioning. Versions are never edited; a change creates a new version."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,7 +57,7 @@ class FloorViolationError(ProfileError):
         self.violations = violations
 
 
-# --- profiles ------------------------------------------------------------------------------
+# profiles
 
 
 def create_profile(
@@ -104,7 +98,7 @@ def list_profiles(db: Session) -> list[MinutesProfile]:
     return list(db.scalars(select(MinutesProfile).order_by(MinutesProfile.slug)))
 
 
-# --- versions ------------------------------------------------------------------------------
+# versions
 
 
 def latest_version(profile: MinutesProfile) -> MinutesProfileVersion | None:
@@ -128,7 +122,7 @@ def version_content(version: MinutesProfileVersion) -> ProfileContent:
 
 
 def check_floors(parent: ProfileContent, child: ProfileContent) -> list[str]:
-    """Hard floors and evidential fundamentals must be carried over unchanged."""
+    """List the hard floors or evidential fundamentals the child changed."""
     violations: list[str] = []
     if child.hard_floors != parent.hard_floors:
         violations.append("hard_floors differ from the parent version")
@@ -152,7 +146,7 @@ def create_version(
     created_by: str | None = None,
     parent_number: int | None = None,
 ) -> MinutesProfileVersion:
-    """Add a new `proposed` version. Parent defaults to the active (else latest) version."""
+    """Add a proposed version. The parent defaults to the active or latest version."""
     if parent_number is not None:
         parent = get_version(profile, parent_number)
     else:
@@ -207,21 +201,21 @@ def change_status(
 
 
 def confirm(db: Session, version: MinutesProfileVersion, *, by: str | None = None) -> None:
-    """Walk a version through review to confirmed (used by seeding)."""
+    """Move a version through reviewed to confirmed."""
     if version.status == Status.PROPOSED:
         change_status(db, version, Status.REVIEWED, by=by)
     if version.status == Status.REVIEWED:
         change_status(db, version, Status.CONFIRMED, by=by)
 
 
-# --- seeding -------------------------------------------------------------------------------
+# seeding
 
 
 @dataclass(frozen=True)
 class SeedResult:
     profile: MinutesProfile
     version: MinutesProfileVersion
-    created: bool  # False when the latest version already had identical content
+    created: bool  # False if the content was unchanged
 
 
 def seed_profile(
@@ -232,7 +226,7 @@ def seed_profile(
     confirm_version: bool = False,
     by: str | None = "seed",
 ) -> SeedResult:
-    """Idempotently load profile content: a new version only if the content changed."""
+    """Load profile content, creating a new version only if it changed."""
     try:
         profile = get_profile(db, slug)
     except ProfileNotFoundError:

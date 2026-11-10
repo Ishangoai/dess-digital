@@ -70,7 +70,7 @@
             }
           ],
           "default": null,
-          "description": "Legitimate variations; never overrides the hard floors.",
+          "description": "Allowed variations.",
           "title": "Customisation Scope"
         },
         "rationale": {
@@ -137,7 +137,7 @@
       "additionalProperties": false,
       "properties": {
         "core": {
-          "description": "Core minuting instructions given to the model.",
+          "description": "Main instructions given to the model.",
           "minLength": 1,
           "title": "Core",
           "type": "string"
@@ -256,7 +256,6 @@
       "type": "object"
     },
     "Provenance": {
-      "description": "Where a provision came from (inferred ones stay provisional until confirmed).",
       "enum": [
         "dess_standard",
         "inferred",
@@ -309,7 +308,6 @@
       "type": "object"
     },
     "ProvisionKind": {
-      "description": "The four kinds of provision a profile must keep distinct.",
       "enum": [
         "evidential_fundamental",
         "requirement",
@@ -321,7 +319,7 @@
     },
     "StageGuidance": {
       "additionalProperties": false,
-      "description": "Optional per-stage guidance appended to the relevant pipeline call.",
+      "description": "Extra instructions for each pipeline stage.",
       "properties": {
         "evidence": {
           "anyOf": [
@@ -401,7 +399,7 @@
     },
     "StyleMap": {
       "additionalProperties": false,
-      "description": "Word paragraph/table style names used by the exporter (fall back to Normal if absent).",
+      "description": "Word style names used in the exported document.",
       "properties": {
         "title": {
           "default": "Title",
@@ -460,7 +458,7 @@
       "type": "string"
     },
     "hard_floors": {
-      "description": "Professional floor that no customisation may override.",
+      "description": "Rules no customisation can override.",
       "items": {
         "type": "string"
       },

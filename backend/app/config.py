@@ -26,11 +26,9 @@ class Settings(BaseSettings):
     # Exposes /api/llm/* for manual testing. Keep off in prod: the endpoints spend LLM credits.
     llm_test_routes: bool = False
 
-    # Minutes (see app/minutes). The API has no auth yet, so these routes expose client
-    # material: keep off on public deployments until auth exists.
+    # Exposes /api/profiles. Keep off on public deployments: the API has no auth yet.
     minutes_routes: bool = False
-    # Create missing tables on startup (no migrations yet).
-    db_create_tables: bool = True
+    db_create_tables: bool = True  # create missing tables on startup
 
     # New: reads DATA_DIR from your .env, defaults to ./data
     data_dir: Path = Path("./data")

@@ -1,4 +1,4 @@
-"""Minutes Profiles and their immutable, versioned content."""
+"""Minutes profiles and their versions."""
 
 import uuid
 from datetime import UTC, datetime
@@ -17,7 +17,7 @@ def utcnow() -> datetime:
 
 
 def str_enum(enum: type[StrEnum]) -> SAEnum:
-    # Store values as VARCHAR (not a native PG enum) so adding a value needs no migration.
+    # Stored as plain text so new values don't need a migration.
     return SAEnum(
         enum, native_enum=False, length=32, values_callable=lambda e: [m.value for m in e]
     )
@@ -31,10 +31,10 @@ class ProfileVersionStatus(StrEnum):
 
 
 class VersionOrigin(StrEnum):
-    SEED = "seed"  # loaded from a profile file
-    API = "api"  # posted through the API
-    CUSTOMISATION = "customisation"  # future: conversational customisation (Component 2)
-    FEEDBACK = "feedback"  # future: learning from edited drafts (Component 4)
+    SEED = "seed"
+    API = "api"
+    CUSTOMISATION = "customisation"  # not used yet
+    FEEDBACK = "feedback"  # not used yet
 
 
 class MinutesProfile(Base):
