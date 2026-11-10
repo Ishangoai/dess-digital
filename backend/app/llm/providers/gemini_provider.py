@@ -7,8 +7,16 @@ from app.llm.types import (
     CompletionRequest,
     LLMProviderError,
     LLMRefusalError,
+    LLMTruncatedError,
     Usage,
 )
+
+_BLOCKED = {
+    types.FinishReason.SAFETY,
+    types.FinishReason.PROHIBITED_CONTENT,
+    types.FinishReason.BLOCKLIST,
+    types.FinishReason.SPII,
+}
 
 
 class GeminiProvider(Provider):
@@ -44,6 +52,12 @@ class GeminiProvider(Provider):
         feedback = response.prompt_feedback
         if feedback is not None and feedback.block_reason is not None:
             raise LLMRefusalError(f"prompt blocked: {feedback.block_reason}")
+
+        finish = response.candidates[0].finish_reason if response.candidates else None
+        if finish == types.FinishReason.MAX_TOKENS:
+            raise LLMTruncatedError(f"{self.name} output truncated at max_tokens")
+        if finish in _BLOCKED:
+            raise LLMRefusalError(f"response blocked: {finish}")
 
         meta = response.usage_metadata
         return Completion(

@@ -61,6 +61,10 @@ class LLMProviderError(LLMError):
     """The provider SDK failed (auth, rate limit, network, bad request...). See `__cause__`."""
 
 
+class LLMTruncatedError(LLMProviderError):
+    """The output hit max_tokens before finishing. Retry with a higher limit."""
+
+
 class LLMRefusalError(LLMError):
     """The model or provider safety filter declined to answer."""
 

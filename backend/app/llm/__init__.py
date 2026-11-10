@@ -16,6 +16,7 @@ from app.llm.types import (
     LLMProviderError,
     LLMRefusalError,
     LLMResponse,
+    LLMTruncatedError,
     Message,
     Usage,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "LLMProviderError",
     "LLMRefusalError",
     "LLMResponse",
+    "LLMTruncatedError",
     "Message",
     "Usage",
     "build_llm_client",

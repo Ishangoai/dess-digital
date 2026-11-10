@@ -12,11 +12,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://dess:dess@localhost:5432/dess"
     files_dir: Path = Path("data/files")
 
-    # LLM (see app/llm). vertex / anthropic_vertex use GCP ADC, not llm_api_key.
-    llm_provider: LLMProviderName = "vertex"
+    # LLM (see app/llm). Team default: Gemini API with an AI Studio key.
+    # vertex / anthropic_vertex use GCP ADC, not llm_api_key.
+    llm_provider: LLMProviderName = "gemini"
     llm_model: str = ""
     llm_api_key: str = ""
-    llm_max_tokens: int = 16000
+    # Gemini counts thinking tokens against this. OpenAI chat models may need a lower value.
+    llm_max_tokens: int = 32768
     llm_log_prompt_chars: int = 2000
     gcp_project: str = ""
     gcp_location: str = "global"

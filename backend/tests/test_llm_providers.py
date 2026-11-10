@@ -8,9 +8,10 @@ import anthropic
 import openai
 import pytest
 from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from pydantic import BaseModel
 
-from app.llm import LLMProviderError, LLMRefusalError, Message
+from app.llm import LLMProviderError, LLMRefusalError, LLMTruncatedError, Message
 from app.llm.providers import AnthropicProvider, GeminiProvider, OpenAIProvider
 from app.llm.types import CompletionRequest
 
@@ -32,10 +33,13 @@ def make_request(schema: type[BaseModel] | None = None) -> CompletionRequest:
 # --- OpenAI / Azure ---------------------------------------------------------
 
 
-def openai_response(content: str | None, refusal: str | None = None) -> Any:
+def openai_response(
+    content: str | None, refusal: str | None = None, finish_reason: str = "stop"
+) -> Any:
     message = SimpleNamespace(content=content, refusal=refusal)
     usage = SimpleNamespace(prompt_tokens=7, completion_tokens=3)
-    return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+    choice = SimpleNamespace(message=message, finish_reason=finish_reason)
+    return SimpleNamespace(choices=[choice], usage=usage)
 
 
 def test_openai_text() -> None:
@@ -70,6 +74,14 @@ def test_openai_refusal() -> None:
         OpenAIProvider(client).complete(make_request())
 
 
+def test_openai_truncation() -> None:
+    client: Any = MagicMock()
+    client.chat.completions.create.return_value = openai_response("partial", finish_reason="length")
+
+    with pytest.raises(LLMTruncatedError):
+        OpenAIProvider(client).complete(make_request())
+
+
 def test_openai_sdk_error_is_wrapped() -> None:
     client: Any = MagicMock()
     client.chat.completions.create.side_effect = openai.OpenAIError("down")
@@ -81,10 +93,19 @@ def test_openai_sdk_error_is_wrapped() -> None:
 # --- Gemini / Vertex --------------------------------------------------------
 
 
-def gemini_response(text: str, block_reason: str | None = None) -> Any:
+def gemini_response(
+    text: str,
+    block_reason: str | None = None,
+    finish_reason: genai_types.FinishReason = genai_types.FinishReason.STOP,
+) -> Any:
     usage = SimpleNamespace(prompt_token_count=8, candidates_token_count=2, thoughts_token_count=4)
     feedback = SimpleNamespace(block_reason=block_reason) if block_reason else None
-    return SimpleNamespace(text=text, usage_metadata=usage, prompt_feedback=feedback)
+    return SimpleNamespace(
+        text=text,
+        usage_metadata=usage,
+        prompt_feedback=feedback,
+        candidates=[SimpleNamespace(finish_reason=finish_reason)],
+    )
 
 
 def test_gemini_text() -> None:
@@ -115,6 +136,26 @@ def test_gemini_structured_sets_json_schema() -> None:
 def test_gemini_blocked_prompt() -> None:
     client: Any = MagicMock()
     client.models.generate_content.return_value = gemini_response("", block_reason="SAFETY")
+
+    with pytest.raises(LLMRefusalError):
+        GeminiProvider(client).complete(make_request())
+
+
+def test_gemini_truncation() -> None:
+    client: Any = MagicMock()
+    client.models.generate_content.return_value = gemini_response(
+        '{"value": ', finish_reason=genai_types.FinishReason.MAX_TOKENS
+    )
+
+    with pytest.raises(LLMTruncatedError):
+        GeminiProvider(client).complete(make_request(Answer))
+
+
+def test_gemini_blocked_response() -> None:
+    client: Any = MagicMock()
+    client.models.generate_content.return_value = gemini_response(
+        "", finish_reason=genai_types.FinishReason.SAFETY
+    )
 
     with pytest.raises(LLMRefusalError):
         GeminiProvider(client).complete(make_request())
@@ -175,6 +216,14 @@ def test_anthropic_refusal() -> None:
     client.messages.create.return_value = anthropic_response("", stop_reason="refusal")
 
     with pytest.raises(LLMRefusalError):
+        AnthropicProvider(client).complete(make_request())
+
+
+def test_anthropic_truncation() -> None:
+    client: Any = MagicMock()
+    client.messages.create.return_value = anthropic_response("partial", stop_reason="max_tokens")
+
+    with pytest.raises(LLMTruncatedError):
         AnthropicProvider(client).complete(make_request())
 
 

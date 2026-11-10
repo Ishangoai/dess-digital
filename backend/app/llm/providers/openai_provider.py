@@ -7,6 +7,7 @@ from app.llm.types import (
     CompletionRequest,
     LLMProviderError,
     LLMRefusalError,
+    LLMTruncatedError,
     Usage,
 )
 
@@ -42,12 +43,17 @@ class OpenAIProvider(Provider):
                     messages=messages,
                     max_completion_tokens=request.max_tokens,
                 )
+        except openai.LengthFinishReasonError as e:  # raised by .parse()
+            raise LLMTruncatedError(f"{self.name} output truncated at max_tokens") from e
         except openai.OpenAIError as e:
             raise LLMProviderError(f"{self.name} request failed: {e}") from e
 
-        message = response.choices[0].message
+        choice = response.choices[0]
+        message = choice.message
         if message.refusal:
             raise LLMRefusalError(message.refusal)
+        if choice.finish_reason == "length":
+            raise LLMTruncatedError(f"{self.name} output truncated at max_tokens")
 
         usage = response.usage
         return Completion(

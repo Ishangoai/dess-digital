@@ -7,6 +7,7 @@ from app.llm.types import (
     CompletionRequest,
     LLMProviderError,
     LLMRefusalError,
+    LLMTruncatedError,
     Usage,
 )
 
@@ -53,6 +54,8 @@ class AnthropicProvider(Provider):
             raise LLMRefusalError(
                 f"model refused (category={details.category if details else None})"
             )
+        if response.stop_reason == "max_tokens":
+            raise LLMTruncatedError(f"{self.name} output truncated at max_tokens")
 
         u = response.usage
         return Completion(
