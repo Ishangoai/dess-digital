@@ -1,0 +1,501 @@
+{
+  "$defs": {
+    "ActionPresentation": {
+      "enum": [
+        "inline",
+        "inline_and_table"
+      ],
+      "title": "ActionPresentation",
+      "type": "string"
+    },
+    "AttendanceLayout": {
+      "enum": [
+        "paragraph",
+        "list"
+      ],
+      "title": "AttendanceLayout",
+      "type": "string"
+    },
+    "DateStyle": {
+      "enum": [
+        "long",
+        "ordinal",
+        "numeric"
+      ],
+      "title": "DateStyle",
+      "type": "string"
+    },
+    "Dimension": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/DimensionCode"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "purpose": {
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        },
+        "default_standard": {
+          "description": "The standard this profile applies.",
+          "minLength": 1,
+          "title": "Default Standard",
+          "type": "string"
+        },
+        "application": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How the standard is applied.",
+          "title": "Application"
+        },
+        "customisation_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Legitimate variations; never overrides the hard floors.",
+          "title": "Customisation Scope"
+        },
+        "rationale": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Background; not sent to the model.",
+          "title": "Rationale"
+        },
+        "provisions": {
+          "items": {
+            "$ref": "#/$defs/Provision"
+          },
+          "title": "Provisions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "title",
+        "purpose",
+        "default_standard"
+      ],
+      "title": "Dimension",
+      "type": "object"
+    },
+    "DimensionCode": {
+      "enum": [
+        "MP1",
+        "MP2",
+        "MP3",
+        "MP4",
+        "MP5",
+        "MP6",
+        "MP7",
+        "MP8",
+        "MP9",
+        "WS1",
+        "WS2",
+        "WS3",
+        "WS4",
+        "WS5",
+        "WS6"
+      ],
+      "title": "DimensionCode",
+      "type": "string"
+    },
+    "NumberingScheme": {
+      "enum": [
+        "agenda",
+        "sequential",
+        "minute_reference"
+      ],
+      "title": "NumberingScheme",
+      "type": "string"
+    },
+    "OperationalInstructions": {
+      "additionalProperties": false,
+      "properties": {
+        "core": {
+          "description": "Core minuting instructions given to the model.",
+          "minLength": 1,
+          "title": "Core",
+          "type": "string"
+        },
+        "stages": {
+          "$ref": "#/$defs/StageGuidance"
+        }
+      },
+      "required": [
+        "core"
+      ],
+      "title": "OperationalInstructions",
+      "type": "object"
+    },
+    "ParagraphNumbering": {
+      "enum": [
+        "none",
+        "item_decimal"
+      ],
+      "title": "ParagraphNumbering",
+      "type": "string"
+    },
+    "PresentationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "date_style": {
+          "$ref": "#/$defs/DateStyle",
+          "default": "long"
+        },
+        "title_template": {
+          "default": "Minutes of a meeting of the {body} of {organisation}",
+          "title": "Title Template",
+          "type": "string"
+        },
+        "status_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "Draft",
+          "title": "Status Label"
+        },
+        "numbering": {
+          "$ref": "#/$defs/NumberingScheme",
+          "default": "agenda"
+        },
+        "minute_reference_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minute Reference Prefix"
+        },
+        "paragraph_numbering": {
+          "$ref": "#/$defs/ParagraphNumbering",
+          "default": "none"
+        },
+        "action_presentation": {
+          "$ref": "#/$defs/ActionPresentation",
+          "default": "inline"
+        },
+        "attendance_layout": {
+          "$ref": "#/$defs/AttendanceLayout",
+          "default": "list"
+        },
+        "styles": {
+          "$ref": "#/$defs/StyleMap"
+        },
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only used without a template.",
+          "title": "Font Family"
+        },
+        "font_size_pt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size Pt"
+        },
+        "comment_author": {
+          "default": "DESS Minutes",
+          "title": "Comment Author",
+          "type": "string"
+        },
+        "comment_initials": {
+          "default": "DM",
+          "title": "Comment Initials",
+          "type": "string"
+        }
+      },
+      "title": "PresentationSettings",
+      "type": "object"
+    },
+    "Provenance": {
+      "description": "Where a provision came from (inferred ones stay provisional until confirmed).",
+      "enum": [
+        "dess_standard",
+        "inferred",
+        "explicit_requirement",
+        "professional_preference"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "Provision": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable id, unique within the profile.",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProvisionKind"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance",
+          "default": "dess_standard"
+        },
+        "source_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Note"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "text"
+      ],
+      "title": "Provision",
+      "type": "object"
+    },
+    "ProvisionKind": {
+      "description": "The four kinds of provision a profile must keep distinct.",
+      "enum": [
+        "evidential_fundamental",
+        "requirement",
+        "professional_default",
+        "preference"
+      ],
+      "title": "ProvisionKind",
+      "type": "string"
+    },
+    "StageGuidance": {
+      "additionalProperties": false,
+      "description": "Optional per-stage guidance appended to the relevant pipeline call.",
+      "properties": {
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style"
+        },
+        "questions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Questions"
+        },
+        "validation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validation"
+        },
+        "presentation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Presentation"
+        }
+      },
+      "title": "StageGuidance",
+      "type": "object"
+    },
+    "StyleMap": {
+      "additionalProperties": false,
+      "description": "Word paragraph/table style names used by the exporter (fall back to Normal if absent).",
+      "properties": {
+        "title": {
+          "default": "Title",
+          "title": "Title",
+          "type": "string"
+        },
+        "heading": {
+          "default": "Heading 1",
+          "title": "Heading",
+          "type": "string"
+        },
+        "body": {
+          "default": "Normal",
+          "title": "Body",
+          "type": "string"
+        },
+        "table": {
+          "default": "Table Grid",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "title": "StyleMap",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "jurisdiction": {
+      "const": "UK",
+      "default": "UK",
+      "title": "Jurisdiction",
+      "type": "string"
+    },
+    "hard_floors": {
+      "description": "Professional floor that no customisation may override.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Hard Floors",
+      "type": "array"
+    },
+    "minuting_policy": {
+      "items": {
+        "$ref": "#/$defs/Dimension"
+      },
+      "title": "Minuting Policy",
+      "type": "array"
+    },
+    "writing_style": {
+      "items": {
+        "$ref": "#/$defs/Dimension"
+      },
+      "title": "Writing Style",
+      "type": "array"
+    },
+    "presentation": {
+      "$ref": "#/$defs/PresentationSettings"
+    },
+    "operational_instructions": {
+      "$ref": "#/$defs/OperationalInstructions"
+    }
+  },
+  "required": [
+    "name",
+    "hard_floors",
+    "minuting_policy",
+    "writing_style",
+    "operational_instructions"
+  ],
+  "title": "MinutesProfileContent",
+  "type": "object"
+}
