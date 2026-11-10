@@ -87,7 +87,9 @@ Stage 1: understand the meeting evidence. Do not decide yet what belongs in the 
 not evidence of what happened.
 - Split the transcript and notes into segments and assign each to the agenda item it concerns \
 by subject, not by position. Account for every substantive passage. Mark business not on the \
-agenda as additional business (AB1, AB2 ...) rather than inventing item numbers.
+agenda that the meeting actually took up as additional business (AB1, AB2 ...) rather than \
+inventing item numbers. Passing remarks, interruptions and digressions are not additional \
+business: give them association 'uncertain' with no item.
 - Record meeting particulars only where the evidence supports them.
 - Record factual uncertainties with the competing readings. Do not average or pick between \
 conflicting sources.
@@ -99,9 +101,10 @@ TASK_POLICY = """
 Stage 2: apply the Minuting Policy (MP1-MP9) to decide what the minutes record and in what depth.
 The confirmed evidence map was reviewed by the governance professional: where it differs from \
 your own reading, follow it.
-- For every agenda item and additional business item, choose the treatment and select the \
-outcomes, material points, actions and delegations the record needs. Depth follows \
-significance, not airtime.
+- For every agenda item, choose the treatment and select the outcomes, material points, actions \
+and delegations the record needs. Depth follows significance, not airtime.
+- Include additional business only if it was business the meeting transacted. Leave out \
+digressions and remarks with no governance value (note them in omitted_summary).
 - Use the outcome vocabulary exactly. Never infer approval from silence, a favourable \
 discussion, an agenda label or a paper's proposed resolution.
 - Keep limits, conditions and qualifications attached to the outcome they govern.
@@ -115,13 +118,17 @@ to record, not a question.
 TASK_STYLE = """
 Stage 3: write the minutes in the Writing Style (WS1-WS6), expressing only the substance in the \
 selection. Do not add, drop or strengthen substance.
-- One minute item per selected item, in agenda order, using the agenda numbering.
+- One minute item per selected item, in agenda order, using the agenda numbering. Place \
+additional business under the agenda's 'any other business' item if there is one, otherwise \
+after the last agenda item.
+- British spelling and conventions throughout (authorised, organisation, programme).
 - Paragraph ids are the item ref plus .p and a number (4.p1, 4.p2 ...). Set outcome_type on \
 paragraphs that record an outcome.
 - Header: only particulars the evidence supports; leave the rest null or empty.
 - Turn each clarification requirement into one neutral, answerable question. Anchor it to the \
-smallest affected passage: anchor_text must be an exact substring of that paragraph. Use \
-item_heading or meeting_heading anchors when no passage can be written.
+smallest affected passage: anchor_text must be a short phrase (usually a few words, never the \
+whole paragraph) copied exactly from that paragraph. Use item_heading or meeting_heading anchors \
+when no passage can be written.
 - Questions never appear in the minutes text. No blanks, placeholders or 'TBC' in the text.
 - If no clarification is needed, return no questions.
 """
