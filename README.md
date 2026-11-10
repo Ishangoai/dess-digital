@@ -22,6 +22,20 @@ cd backend && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at
 cd frontend && bun install && bun run dev                       # :5173, proxies /api
 ```
 
+The backend needs a database. Either run Postgres in Docker:
+
+```bash
+docker run -d --name dess-pg -e POSTGRES_USER=dess -e POSTGRES_PASSWORD=dess -e POSTGRES_DB=dess -p 5432:5432 postgres:17-alpine
+```
+
+or set `DATABASE_URL=sqlite:///./data/dev.db` in `backend/.env` for a zero-setup local database. Tables are created on startup.
+
+Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded from a local file. The DESS Standard text is client material, so it lives in the gitignored `reference/` folder and is never committed:
+
+```bash
+cd backend && uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
+```
+
 ## Checks
 
 ```bash
