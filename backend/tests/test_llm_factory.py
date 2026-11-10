@@ -51,7 +51,14 @@ def test_vertex_uses_gcp_project_and_location(monkeypatch: pytest.MonkeyPatch) -
     )
 
     assert client.provider.name == "vertex"
-    genai_client.assert_called_once_with(enterprise=True, project="proj", location="europe-west2")
+    kwargs = genai_client.call_args.kwargs
+    assert (kwargs["enterprise"], kwargs["project"], kwargs["location"]) == (
+        True,
+        "proj",
+        "europe-west2",
+    )
+    assert kwargs["http_options"].timeout == 600_000
+    assert kwargs["http_options"].retry_options.http_status_codes == [429, 500, 503]
 
 
 def test_anthropic_vertex_uses_gcp_project_and_region(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,7 +68,7 @@ def test_anthropic_vertex_uses_gcp_project_and_region(monkeypatch: pytest.Monkey
     client = build_llm_client(make_settings(llm_provider="anthropic_vertex", gcp_project="proj"))
 
     assert client.provider.name == "anthropic_vertex"
-    vertex_client.assert_called_once_with(project_id="proj", region="global")
+    vertex_client.assert_called_once_with(project_id="proj", region="global", timeout=600)
 
 
 @pytest.mark.parametrize(

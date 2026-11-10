@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # Gemini counts thinking tokens against this. OpenAI chat models may need a lower value.
     llm_max_tokens: int = 32768
     llm_log_prompt_chars: int = 2000
+    llm_timeout_seconds: int = 600
     gcp_project: str = ""
     gcp_location: str = "global"
     azure_endpoint: str = ""
