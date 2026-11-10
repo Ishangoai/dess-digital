@@ -7,6 +7,7 @@ Usage:
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 from app.llm import get_llm_client
@@ -26,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True, help="folder for the JSON outputs")
     parser.add_argument("--max-tokens", type=int, default=65536)
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if not args.transcript and not args.notes:
         parser.error("give --transcript and/or --notes")
 
