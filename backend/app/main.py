@@ -5,7 +5,7 @@ import uvicorn
 from fastapi import APIRouter, FastAPI
 
 from app.config import settings
-from app.routers import llm
+from app.routers import files, llm
 
 # Root handler so app loggers (e.g. app.llm prompt/token logs) reach stdout under uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -24,6 +24,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+api.include_router(files.router)
 if settings.llm_test_routes:
     api.include_router(llm.router)
 
