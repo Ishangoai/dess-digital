@@ -36,6 +36,34 @@ Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded
 cd backend && uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
 ```
 
+### Drafting minutes
+
+With `MINUTES_ROUTES=true`, `LLM_MODEL` and `LLM_API_KEY` set in `backend/.env`:
+
+```bash
+cd backend
+uv run uvicorn app.main:app --reload                  # API on :8000
+uv run --group ui python -m dev_ui                    # Gradio dev UI on :7860
+```
+
+The flow is: upload agenda + transcript and/or notes, review the mapping of evidence to agenda items, generate, then download the Word draft (clarification questions are Word comments).
+
+Without the API or database:
+
+```bash
+uv run python -m app.minutes.cli --profile ../reference/profiles/dess_standard.yaml \
+  --agenda agenda.docx --transcript transcript.txt --out ../reference/out
+```
+
+### Evaluating judgement
+
+Runs cases through the real model (costs tokens) and checks the minutes apply judgement rather than summarise. Cases built from DESS material go in `reference/evals/cases`.
+
+```bash
+uv run python -m evals.minutes_eval evals/cases/*.yaml ../reference/evals/cases/*.yaml \
+  --profile ../reference/profiles/dess_standard.yaml --out ../reference/evals/out --repeat 2
+```
+
 ## Checks
 
 ```bash
