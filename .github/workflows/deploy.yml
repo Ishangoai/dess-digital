@@ -75,6 +75,9 @@ jobs:
           LLM_PROVIDER=${{ vars.LLM_PROVIDER }}
           LLM_MODEL=${{ vars.LLM_MODEL }}
           LLM_API_KEY=${{ secrets.LLM_API_KEY }}
+          GCP_PROJECT=${{ secrets.GCP_PROJECT_NAME }}
+          GCP_LOCATION=${{ vars.GCP_LOCATION || 'global' }}
+          AZURE_ENDPOINT=${{ vars.AZURE_ENDPOINT }}
           EOF
 
           gcloud --version
