@@ -5,14 +5,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from app.config import settings
+
 router = APIRouter(prefix="/files", tags=["Files"])
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-LOCAL_DEV_DIR = BASE_DIR / "data" / "files" / "uploads"
-
-# Read from the environment variable 'UPLOAD_DIR', fallback to local directory
-BASE_UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", LOCAL_DEV_DIR))
+BASE_UPLOAD_DIR = settings.uploads_dir
 
 
 @router.post("/upload")
@@ -49,7 +47,7 @@ async def upload_file(file: UploadFile = File(...)):
     finally:
         file.file.close()
 
-    relative_path = file_path.relative_to(BASE_DIR)
+    relative_path = file_path.relative_to(settings.uploads_dir)
 
     return {
         "message": "File uploaded successfully",
