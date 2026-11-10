@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.162.0",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
+    "python-multipart>=0.0.33",
     "sqlalchemy>=2.1.8",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -24,6 +25,20 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Tell Ruff that these FastAPI function calls are safe to use in default arguments
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Security",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
