@@ -14,5 +14,13 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key: str = ""
 
+    # New: reads DATA_DIR from your .env, defaults to ./data
+    data_dir: Path = Path("./data")
+
+    @property
+    def uploads_dir(self) -> Path:
+        """Resolves to <DATA_DIR>/files/uploads."""
+        return self.data_dir.resolve() / "files" / "uploads"
+
 
 settings = Settings()

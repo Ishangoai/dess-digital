@@ -3,6 +3,8 @@ import os
 import uvicorn
 from fastapi import APIRouter, FastAPI
 
+from app.routers import files
+
 app = FastAPI(
     title="dess-digital",
     docs_url="/api/docs",
@@ -16,6 +18,8 @@ api = APIRouter(prefix="/api")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+api.include_router(files.router)
 
 app.include_router(api)
 
