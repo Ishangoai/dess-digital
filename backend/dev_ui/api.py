@@ -11,7 +11,7 @@ class ApiError(Exception):
 
 
 class MinutesApi:
-    def __init__(self, base_url: str, timeout: float = 900) -> None:
+    def __init__(self, base_url: str, timeout: float = 1800) -> None:  # long meetings take a while
         self.http = httpx.Client(base_url=base_url.rstrip("/") + "/api", timeout=timeout)
 
     def _json(self, response: httpx.Response) -> Any:
