@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import settings
 from app.db import create_tables
-from app.routers import files, llm, profile
+from app.routers import draft, files, llm, profile
 
 # Root handler so app loggers (e.g. app.llm prompt/token logs) reach stdout under uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -47,6 +47,7 @@ if settings.llm_test_routes:
     api.include_router(llm.router)
 if settings.minutes_routes:
     api.include_router(profile.router)
+    api.include_router(draft.router)
 
 app.include_router(api)
 

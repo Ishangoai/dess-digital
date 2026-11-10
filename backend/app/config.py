@@ -26,9 +26,13 @@ class Settings(BaseSettings):
     # Exposes /api/llm/* for manual testing. Keep off in prod: the endpoints spend LLM credits.
     llm_test_routes: bool = False
 
-    # Exposes /api/profiles. Keep off on public deployments: the API has no auth yet.
+    # Exposes /api/profiles and /api/drafts. Keep off on public deployments: no auth yet.
     minutes_routes: bool = False
     db_create_tables: bool = True  # create missing tables on startup
+    minutes_default_profile: str = "dess-standard"
+    minutes_max_output_tokens: int = 65536  # per pipeline stage
+    minutes_max_input_chars: int = 1_500_000
+    minutes_max_upload_bytes: int = 20_000_000
 
     # New: reads DATA_DIR from your .env, defaults to ./data
     data_dir: Path = Path("./data")
