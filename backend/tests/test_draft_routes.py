@@ -1,6 +1,8 @@
+import io
 from collections.abc import Iterator
 from pathlib import Path
 
+import docx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -185,3 +187,38 @@ def test_list_drafts(client: TestClient) -> None:
 
 def test_unknown_run_is_404(client: TestClient) -> None:
     assert client.get("/api/drafts/00000000-0000-0000-0000-000000000000").status_code == 404
+
+
+def test_document_download(client: TestClient) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+
+    response = client.get(f"/api/drafts/{run_id}/document.docx")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats")
+    doc = docx.Document(io.BytesIO(response.content))
+    assert len(list(doc.comments)) == 1
+
+
+def test_document_with_template(client: TestClient) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    template = docx.Document()
+    template.add_paragraph("{{MINUTES}}")
+    buffer = io.BytesIO()
+    template.save(buffer)
+
+    response = client.post(
+        f"/api/drafts/{run_id}/document",
+        files={"template": ("t.docx", buffer.getvalue(), "application/octet-stream")},
+    )
+    assert response.status_code == 200
+    assert "{{MINUTES}}" not in [
+        p.text for p in docx.Document(io.BytesIO(response.content)).paragraphs
+    ]
+
+    bad = client.post(f"/api/drafts/{run_id}/document", files={"template": ("t.docx", b"junk")})
+    assert bad.status_code == 415
+
+
+def test_document_before_draft_is_409(client: TestClient) -> None:
+    run_id = create(client)["id"]
+    assert client.get(f"/api/drafts/{run_id}/document.docx").status_code == 409

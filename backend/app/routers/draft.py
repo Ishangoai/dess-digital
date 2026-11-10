@@ -3,12 +3,24 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import get_db
 from app.llm import LLMClient, get_llm_client
+from app.minutes.docx_export import DOCX_MEDIA_TYPE
 from app.minutes.evidence import MeetingInfo, SourceRole
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import EvidenceMap
@@ -153,3 +165,34 @@ def generate_draft(
             status.HTTP_422_UNPROCESSABLE_CONTENT, {"mapping_errors": e.errors}
         ) from e
     return DraftRunOut.of(run)
+
+
+def _docx_response(run: DraftRun, template: bytes | None = None) -> Response:
+    try:
+        content = svc.render_document(run, template)
+    except svc.InvalidStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except UnsupportedFileError as e:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
+    filename = f"draft-minutes-{run.id.hex[:8]}.docx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content, media_type=DOCX_MEDIA_TYPE, headers=headers)
+
+
+@router.get("/{run_id}/document.docx", response_class=Response)
+def download_document(run_id: uuid.UUID, db: DB) -> Response:
+    """The draft as Word, with clarification questions as comments."""
+    return _docx_response(_run(db, run_id))
+
+
+@router.post("/{run_id}/document", response_class=Response)
+async def download_document_with_template(
+    run_id: uuid.UUID,
+    db: DB,
+    template: Annotated[UploadFile, File(description="Word template (.docx)")],
+) -> Response:
+    """The draft built into your Word template, at a {{MINUTES}} paragraph if present."""
+    data = await template.read(settings.minutes_max_upload_bytes + 1)
+    if len(data) > settings.minutes_max_upload_bytes:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "template is too large")
+    return _docx_response(_run(db, run_id), data)
