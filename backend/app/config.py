@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     gcp_project: str = ""
     gcp_location: str = "global"
     azure_endpoint: str = ""
+    # Exposes /api/llm/* for manual testing. Keep off in prod: the endpoints spend LLM credits.
+    llm_test_routes: bool = False
 
 
 settings = Settings()
