@@ -36,9 +36,9 @@ async def upload_file(file: UploadFile = File(...)):
     target_dir = BASE_UPLOAD_DIR / current_time
 
     os.makedirs(target_dir, exist_ok=True)
-    
-    safe_filename = Path(file.filename).name 
-    
+
+    safe_filename = Path(file.filename).name
+
     file_path = target_dir / safe_filename
 
     try:
