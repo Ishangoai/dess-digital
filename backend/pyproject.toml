@@ -24,6 +24,9 @@ dev = [
     "ruff>=0.17.4",
     "ty>=0.0.99",
 ]
+ui = [
+    "gradio>=6.31",
+]
 
 [tool.ruff]
 line-length = 100
@@ -47,3 +50,7 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ty.src]
+# dev_ui needs the optional "ui" group (gradio): uv run --group ui ty check dev_ui
+exclude = ["dev_ui"]
