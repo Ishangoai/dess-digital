@@ -1,6 +1,6 @@
 import logging
-from collections.abc import Callable
 from datetime import UTC, datetime
+from types import FunctionType
 from typing import Any
 from uuid import UUID
 
@@ -61,7 +61,7 @@ def transition_job(
 
 def execute_job(
     job_id: UUID,
-    func: Callable[..., Any],
+    func: FunctionType,
     function_params: dict[str, Any],
 ) -> None:
     """Execute a background function and track its status."""
@@ -105,7 +105,7 @@ def execute_job(
 
 def add_job(
     background_tasks: BackgroundTasks,
-    func: Callable[..., Any],
+    func: FunctionType,
     function_params: dict[str, Any],
     db: Session,
 ) -> Job:
