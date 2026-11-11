@@ -222,3 +222,29 @@ def test_document_with_template(client: TestClient) -> None:
 def test_document_before_draft_is_409(client: TestClient) -> None:
     run_id = create(client)["id"]
     assert client.get(f"/api/drafts/{run_id}/document.docx").status_code == 409
+
+
+def test_failed_analysis_can_be_retried_without_reupload(
+    client: TestClient, provider: ScriptedProvider
+) -> None:
+    good = provider.responses["EvidenceAnalysis"]
+    provider.responses["EvidenceAnalysis"] = LLMProviderError("429 quota exceeded")
+    failed = create(client)
+    assert failed["status"] == "failed"
+    assert failed["error_stage"] == "evidence"
+
+    generate = client.post(f"/api/drafts/{failed['id']}/generate")
+    assert generate.status_code == 409
+    assert "retry it first" in generate.json()["detail"]
+
+    provider.responses["EvidenceAnalysis"] = good
+    retried = client.post(f"/api/drafts/{failed['id']}/analyse").json()
+    assert retried["status"] == "awaiting_mapping_review"
+    assert retried["error"] is None
+    assert [c["ok"] for c in retried["llm_calls"]] == [False, True]
+    assert client.post(f"/api/drafts/{failed['id']}/generate").json()["status"] == "completed"
+
+
+def test_only_failed_analysis_can_be_retried(client: TestClient) -> None:
+    run_id = create(client)["id"]
+    assert client.post(f"/api/drafts/{run_id}/analyse").status_code == 409

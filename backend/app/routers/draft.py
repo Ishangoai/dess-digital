@@ -147,6 +147,16 @@ def put_mapping(run_id: uuid.UUID, mapping: EvidenceMap, db: DB) -> MappingRevie
     return MappingReview.of(run)
 
 
+@router.post("/{run_id}/analyse")
+def retry_analysis(run_id: uuid.UUID, db: DB, llm: LLM) -> DraftRunOut:
+    """Retry a failed evidence analysis without uploading the files again."""
+    try:
+        run = svc.retry_analysis(db, llm, _run(db, run_id))
+    except svc.InvalidStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return DraftRunOut.of(run)
+
+
 @router.post("/{run_id}/generate")
 def generate_draft(
     run_id: uuid.UUID,

@@ -30,7 +30,9 @@ def build(api: MinutesApi) -> gr.Blocks:
                 meeting_date = gr.Textbox(label="Meeting date")
                 profile_slug = gr.Textbox(label="Profile", value="dess-standard")
             auto_confirm = gr.Checkbox(label="Skip mapping review (draft in one step)")
-            analyse_btn = gr.Button("1. Analyse evidence", variant="primary")
+            with gr.Row():
+                analyse_btn = gr.Button("1. Analyse evidence", variant="primary")
+                retry_btn = gr.Button("Retry failed analysis")
             status = gr.Markdown()
 
             with gr.Accordion("2. Review the mapping of evidence to agenda items", open=True):
@@ -164,6 +166,17 @@ def build(api: MinutesApi) -> gr.Blocks:
                 raise gr.Error(str(e)) from e
 
         generate_btn.click(on_generate, [run_state, mapping_state, mapping_table], run_outputs)
+
+        def on_retry(run):
+            if not run:
+                raise gr.Error("No run to retry.")
+            try:
+                api.retry_analysis(run["id"])
+                return show_run(api.get_draft(run["id"]))
+            except ApiError as e:
+                raise gr.Error(str(e)) from e
+
+        retry_btn.click(on_retry, run_state, run_outputs)
 
         def on_export(run, template_path):
             if not run or not run.get("draft"):

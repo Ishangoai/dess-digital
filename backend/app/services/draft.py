@@ -115,9 +115,20 @@ def create_run(
     db.add(run)
     db.commit()
 
-    pipeline = _pipeline(run, llm)
+    return _analyse(db, llm, run)
+
+
+def retry_analysis(db: Session, llm: LLMClient, run: DraftRun) -> DraftRun:
+    """Re-run stage 1 for a run whose analysis failed, reusing the uploaded files."""
+    failed_analysis = run.status == DraftStatus.FAILED and run.error_stage == PipelineStage.EVIDENCE
+    if not failed_analysis or not _claim(db, run, [DraftStatus.FAILED], DraftStatus.ANALYSING):
+        raise InvalidStateError(f"only a failed analysis can be retried (status {run.status})")
+    return _analyse(db, llm, run)
+
+
+def _analyse(db: Session, llm: LLMClient, run: DraftRun) -> DraftRun:
     try:
-        result = pipeline.analyse_evidence()
+        result = _pipeline(run, llm).analyse_evidence()
     except StageError as e:
         _record_failure(db, run, llm, e)
         return run
@@ -201,20 +212,13 @@ def generate(
         PipelineStage.EVIDENCE,
     }
     allowed = [DraftStatus.AWAITING_MAPPING_REVIEW] + ([DraftStatus.FAILED] if retry_failed else [])
-    # Claim the run atomically so a double click cannot start two drafts.
-    claimed = cast(
-        CursorResult[Any],
-        db.execute(
-            update(DraftRun)
-            .where(DraftRun.id == run.id, DraftRun.status.in_(allowed))
-            .values(status=DraftStatus.DRAFTING, error=None, error_stage=None)
-        ),
-    )
-    db.commit()
-    if claimed.rowcount != 1:
-        db.refresh(run)
-        raise InvalidStateError(f"cannot generate a draft from status {run.status}")
-    db.refresh(run)
+    if not _claim(db, run, allowed, DraftStatus.DRAFTING):
+        hint = (
+            " (analysis failed: retry it first)"
+            if run.error_stage == PipelineStage.EVIDENCE
+            else ""
+        )
+        raise InvalidStateError(f"cannot generate a draft from status {run.status}{hint}")
 
     assert run.mapping is not None and run.analysis is not None
     pipeline = _pipeline(run, llm)
@@ -259,6 +263,21 @@ def render_document(run: DraftRun, template: bytes | None = None) -> bytes:
         raise
     except Exception as e:  # python-docx raises several unrelated types for bad templates
         raise UnsupportedFileError(f"template is not a readable .docx file: {e}") from e
+
+
+def _claim(db: Session, run: DraftRun, allowed: list[DraftStatus], new: DraftStatus) -> bool:
+    """Move the run to a new status atomically, so a double click cannot start it twice."""
+    result = cast(
+        CursorResult[Any],
+        db.execute(
+            update(DraftRun)
+            .where(DraftRun.id == run.id, DraftRun.status.in_(allowed))
+            .values(status=new, error=None, error_stage=None)
+        ),
+    )
+    db.commit()
+    db.refresh(run)
+    return result.rowcount == 1
 
 
 def _pipeline(run: DraftRun, llm: LLMClient) -> Pipeline:

@@ -45,6 +45,9 @@ class MinutesApi:
     def get_mapping(self, run_id: str) -> dict[str, Any]:
         return self._json(self.http.get(f"/drafts/{run_id}/mapping"))
 
+    def retry_analysis(self, run_id: str) -> dict[str, Any]:
+        return self._json(self.http.post(f"/drafts/{run_id}/analyse"))
+
     def generate(self, run_id: str, mapping: dict[str, Any] | None) -> dict[str, Any]:
         return self._json(self.http.post(f"/drafts/{run_id}/generate", json=mapping))
 
