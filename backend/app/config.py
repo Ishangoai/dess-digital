@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://dess:dess@localhost:5432/dess"
-    files_dir: Path = Path("data/files")
+
+    files_dir: Path = Path("/data/files")
 
     # LLM: vertex | bedrock | azure
     llm_provider: str = "vertex"
@@ -19,8 +20,8 @@ class Settings(BaseSettings):
 
     @property
     def uploads_dir(self) -> Path:
-        """Resolves to <DATA_DIR>/files/uploads."""
-        return self.data_dir.resolve() / "files" / "uploads"
+        """Resolves to the persisted mount: /data/files/uploads."""
+        return self.files_dir / "uploads"
 
 
 settings = Settings()
