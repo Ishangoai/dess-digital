@@ -23,7 +23,7 @@ async def save_upload_file(
             detail=(
                 f"The {file_type} file ('{upload_file.filename}') has an "
                 "unsupported format. Please upload a PDF or Word document (.pdf, .doc, .docx)."
-            )
+            ),
         )
     # -----------------------
 
