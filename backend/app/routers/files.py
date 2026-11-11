@@ -40,28 +40,19 @@ async def upload_files(
     saved_files = []
 
     agenda_data = await save_upload_file(
-        agenda, 
-        target_dir, 
-        "agenda", 
-        allowed_types=WORD_TYPES + PDF_TYPES
+        agenda, target_dir, "agenda", allowed_types=WORD_TYPES + PDF_TYPES
     )
     saved_files.append(agenda_data)
 
     if transcript:
         transcript_data = await save_upload_file(
-            transcript, 
-            target_dir, 
-            "transcript", 
-            allowed_types=WORD_TYPES + PDF_TYPES
+            transcript, target_dir, "transcript", allowed_types=WORD_TYPES + PDF_TYPES
         )
         saved_files.append(transcript_data)
 
     if meeting_notes:
         notes_data = await save_upload_file(
-            meeting_notes, 
-            target_dir, 
-            "meeting_notes", 
-            allowed_types=WORD_TYPES + PDF_TYPES
+            meeting_notes, target_dir, "meeting_notes", allowed_types=WORD_TYPES + PDF_TYPES
         )
         saved_files.append(notes_data)
 
