@@ -1,146 +1,383 @@
 <script lang="ts">
-  let files = $state<FileList | null>(null);
-  let statusMessage = $state<string>('');
-  let isUploading = $state<boolean>(false);
-  let isError = $state<boolean>(false);
+    let files = $state({
+        agenda: null as FileList | null,
+        transcript: null as FileList | null,
+        meeting_notes: null as FileList | null
+    });
 
-  async function uploadFile() {
-    if (!files || files.length === 0) {
-      statusMessage = 'Please select a file first.';
-      isError = true;
-      return;
+    let uploadStatus = $state("");
+    let errorMessage = $state("");
+    let isUploading = $state(false);
+
+    async function handleUpload(event: Event) {
+        event.preventDefault();
+        isUploading = true;
+        uploadStatus = "";
+        errorMessage = "";
+
+        if (!files.agenda?.[0]) {
+            errorMessage = "Agenda is required.";
+            isUploading = false;
+            return;
+        }
+
+        if (!files.transcript?.[0] && !files.meeting_notes?.[0]) {
+            errorMessage = "You must upload either a transcript or meeting notes (or both) alongside the agenda.";
+            isUploading = false;
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("agenda", files.agenda[0]);
+        
+        if (files.transcript?.[0]) {
+            formData.append("transcript", files.transcript[0]);
+        }
+        if (files.meeting_notes?.[0]) {
+            formData.append("meeting_notes", files.meeting_notes[0]);
+        }
+
+        try {
+            const response = await fetch("/api/files/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                uploadStatus = "Files uploaded successfully!";
+                files = { agenda: null, transcript: null, meeting_notes: null };
+                (event.target as HTMLFormElement).reset();
+            } else {
+                errorMessage = result.detail || "An error occurred during upload.";
+            }
+        } catch (error) {
+            errorMessage = "Network error. Please try again.";
+        } finally {
+            isUploading = false;
+        }
     }
-
-    const selectedFile = files[0];
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-
-    isUploading = true;
-    statusMessage = 'Uploading...';
-    isError = false;
-
-    try {
-      const response = await fetch('/api/files/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.detail || 'Upload failed');
-      }
-
-      statusMessage = `Uploaded successfully! Saved to: ${result.timestamp_folder}/${result.filename}`;
-      isError = false;
-      files = null;
-    } catch (err: any) {
-      statusMessage = `Error: ${err.message}`;
-      isError = true;
-    } finally {
-      isUploading = false;
-    }
-  }
 </script>
 
-<main class="container">
-  <h1>dess-digital</h1>
-  <p class="subtitle">Document Ingestion & Processing</p>
+<main class="page-wrapper">
+    <!-- New Brand Header -->
+    <header class="app-header">
+        <h1>Dess Digital Minutes</h1>
+    </header>
 
-  <div class="card">
-    <label for="file-input">Select Document</label>
-    <input
-      id="file-input"
-      type="file"
-      bind:files
-      accept=".doc,.docx,.pdf,.txt"
-      disabled={isUploading}
-    />
+    <div class="upload-card">
+        <div class="card-header">
+            <div class="icon-wrapper">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+            </div>
+            <!-- Changed to h2 to maintain correct HTML semantics -->
+            <h2>Upload Documents</h2>
+            <p class="subtitle">Securely upload your meeting files to the workspace.</p>
+        </div>
+        
+        <form onsubmit={handleUpload} class="upload-form">
+            
+            <!-- Agenda (Required) -->
+            <div class="form-group required">
+                <label for="agenda">Meeting Agenda</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="file" 
+                        id="agenda" 
+                        bind:files={files.agenda} 
+                        accept="application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        required
+                    />
+                </div>
+                <small class="helper-text">PDF or MS Word format (.pdf, .doc, .docx)</small>
+            </div>
 
-    <button onclick={uploadFile} disabled={isUploading || !files || files.length === 0}>
-      {isUploading ? 'Uploading...' : 'Upload File'}
-    </button>
+            <div class="divider">
+                <span>Optional Files</span>
+            </div>
 
-    {#if statusMessage}
-      <p class="status" class:error={isError}>
-        {statusMessage}
-      </p>
-    {/if}
-  </div>
+            <!-- Transcript (Optional) -->
+            <div class="form-group">
+                <label for="transcript">Meeting Transcript</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="file" 
+                        id="transcript" 
+                        bind:files={files.transcript} 
+                        accept="application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    />
+                </div>
+                <small class="helper-text">PDF or MS Word format (.pdf, .doc, .docx)</small>
+            </div>
+
+            <!-- Meeting Notes (Optional) -->
+            <div class="form-group">
+                <label for="meeting_notes">Meeting Notes</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="file" 
+                        id="meeting_notes" 
+                        bind:files={files.meeting_notes} 
+                        accept="application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    />
+                </div>
+                <small class="helper-text">PDF or MS Word format (.pdf, .doc, .docx)</small>
+            </div>
+
+            <button type="submit" disabled={isUploading} class:loading={isUploading}>
+                {isUploading ? 'Uploading...' : 'Upload Files'}
+            </button>
+        </form>
+
+        {#if uploadStatus}
+            <div class="alert success" role="alert">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                {uploadStatus}
+            </div>
+        {/if}
+        
+        {#if errorMessage}
+            <div class="alert error" role="alert">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                {errorMessage}
+            </div>
+        {/if}
+    </div>
 </main>
 
 <style>
-  .container {
-    font-family: system-ui, -apple-system, sans-serif;
-    max-width: 480px;
-    margin: 60px auto;
-    padding: 0 16px;
-  }
+    /* Global/Wrapper styling */
+    :global(body) {
+        background-color: #f8fafc;
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+    }
 
-  h1 {
-    margin-bottom: 4px;
-    font-size: 1.75rem;
-  }
+    .page-wrapper {
+        display: flex;
+        flex-direction: column; /* Stack header and card vertically */
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 2rem;
+    }
 
-  .subtitle {
-    color: #666;
-    margin-top: 0;
-    margin-bottom: 24px;
-    font-size: 0.95rem;
-  }
+    /* App Brand Header */
+    .app-header {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
 
-  .card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  }
+    .app-header h1 {
+        margin: 0;
+        font-size: 2.25rem;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.025em;
+    }
 
-  label {
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
+    /* Card styling */
+    .upload-card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 520px;
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 10px 15px -3px rgba(0, 0, 0, 0.02);
+        padding: 2.5rem;
+        border: 1px solid #e2e8f0;
+    }
 
-  input[type='file'] {
-    border: 1px dashed #cbd5e1;
-    padding: 12px;
-    border-radius: 6px;
-    cursor: pointer;
-  }
+    /* Card Header */
+    .card-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
 
-  button {
-    padding: 10px 16px;
-    background-color: #2563eb;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    font-size: 0.95rem;
-    transition: background-color 0.2s;
-  }
+    .icon-wrapper {
+        background-color: #eff6ff;
+        color: #3b82f6;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+    }
 
-  button:hover:not(:disabled) {
-    background-color: #1d4ed8;
-  }
+    .card-header h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
 
-  button:disabled {
-    background-color: #93c5fd;
-    cursor: not-allowed;
-  }
+    .subtitle {
+        margin: 0;
+        color: #64748b;
+        font-size: 0.9rem;
+    }
 
-  .status {
-    margin: 0;
-    font-size: 0.875rem;
-    color: #16a34a;
-    word-break: break-all;
-  }
+    /* Form Layout */
+    .upload-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
 
-  .status.error {
-    color: #dc2626;
-  }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #334155;
+    }
+
+    .required label::after {
+        content: "*";
+        color: #ef4444;
+        margin-left: 0.25rem;
+    }
+
+    /* Custom File Input Styling */
+    .input-wrapper {
+        border: 2px dashed #cbd5e1;
+        border-radius: 8px;
+        padding: 0.5rem;
+        background-color: #f8fafc;
+        transition: all 0.2s ease;
+    }
+
+    .input-wrapper:hover {
+        border-color: #94a3b8;
+        background-color: #f1f5f9;
+    }
+
+    input[type="file"] {
+        width: 100%;
+        font-size: 0.85rem;
+        color: #64748b;
+        cursor: pointer;
+    }
+
+    input[type="file"]::file-selector-button {
+        background-color: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 0.5rem 1rem;
+        margin-right: 1rem;
+        color: #334155;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    input[type="file"]::file-selector-button:hover {
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
+    }
+
+    .helper-text {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        margin-left: 0.25rem;
+    }
+
+    /* Divider */
+    .divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        margin: 0.5rem 0;
+    }
+    
+    .divider::before,
+    .divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    
+    .divider span {
+        padding: 0 10px;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    /* Submit Button */
+    button {
+        margin-top: 1rem;
+        padding: 0.875rem;
+        background-color: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease, transform 0.1s ease;
+        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+    }
+
+    button:hover:not(:disabled) {
+        background-color: #2563eb;
+    }
+
+    button:active:not(:disabled) {
+        transform: translateY(1px);
+    }
+
+    button:disabled {
+        background-color: #94a3b8;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+
+    button.loading {
+        opacity: 0.8;
+    }
+
+    /* Alerts */
+    .alert {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-weight: 500;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .alert.success {
+        background-color: #ecfdf5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+
+    .alert.error {
+        background-color: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>

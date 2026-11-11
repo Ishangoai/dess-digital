@@ -22,8 +22,8 @@ async def save_upload_file(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
                 f"The {file_type} file ('{upload_file.filename}') has an "
-                f"unsupported format. Allowed types: {', '.join(allowed_types)}"
-            ),
+                "unsupported format. Please upload a PDF or Word document (.pdf, .doc, .docx)."
+            )
         )
     # -----------------------
 
