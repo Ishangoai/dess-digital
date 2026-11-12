@@ -44,4 +44,7 @@ jobs:
 
       - name: Frontend e2e
         working-directory: frontend
-        run: bunx playwright install --with-deps chromium && bun run test:e2e
+        run: |
+          sudo apt-get update
+          bunx playwright install --with-deps chromium
+          bun run test:e2e
