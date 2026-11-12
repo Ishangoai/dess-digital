@@ -1,3 +1,4 @@
+
 from collections.abc import Generator
 from datetime import datetime
 from uuid import UUID
@@ -20,9 +21,7 @@ def test_session_factory() -> Generator[sessionmaker[Session]]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-
     TestingSessionLocal = sessionmaker(engine)
-
     Base.metadata.create_all(engine)
 
     yield TestingSessionLocal
@@ -31,9 +30,7 @@ def test_session_factory() -> Generator[sessionmaker[Session]]:
     engine.dispose()
 
 
-def test_add_job_creates_pending_job(
-    test_session_factory: sessionmaker[Session],
-) -> None:
+def test_add_job_creates_pending_job(test_session_factory: sessionmaker[Session]) -> None:
     background_tasks = BackgroundTasks()
 
     def process_document(filename: str) -> None:
@@ -56,6 +53,15 @@ def test_add_job_creates_pending_job(
         assert created_job.completed_at is None
         assert len(background_tasks.tasks) == 1
 
+        job_id = created_job.id
+
+    # Verify that the job was persisted in the database.
+    with test_session_factory() as db:
+        saved_job = db.get(Job, job_id)
+
+        assert saved_job is not None
+        assert saved_job.status == JobStatus.PENDING
+
 
 def test_execute_job_completes_successfully(
     test_session_factory: sessionmaker[Session],
@@ -77,11 +83,7 @@ def test_execute_job_completes_successfully(
 
         job_id = created_job.id
 
-    monkeypatch.setattr(
-        job_router,
-        "SessionLocal",
-        test_session_factory,
-    )
+    monkeypatch.setattr(job_router, "SessionLocal", test_session_factory)
 
     job_router.execute_job(
         job_id=job_id,
@@ -119,11 +121,7 @@ def test_execute_job_records_failure(
 
         job_id = created_job.id
 
-    monkeypatch.setattr(
-        job_router,
-        "SessionLocal",
-        test_session_factory,
-    )
+    monkeypatch.setattr(job_router, "SessionLocal", test_session_factory)
 
     job_router.execute_job(
         job_id=job_id,
