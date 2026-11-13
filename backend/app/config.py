@@ -27,9 +27,6 @@ class Settings(BaseSettings):
     # Exposes /api/llm/* for manual testing. Keep off in prod: the endpoints spend LLM credits.
     llm_test_routes: bool = False
 
-    # New: reads DATA_DIR from your .env, defaults to ./data
-    data_dir: Path = Path("./data")
-
     @property
     def uploads_dir(self) -> Path:
         """Resolves to the persisted mount: /data/files/uploads."""
