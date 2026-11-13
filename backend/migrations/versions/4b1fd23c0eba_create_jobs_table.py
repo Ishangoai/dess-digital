@@ -43,3 +43,4 @@ def downgrade() -> None:
     """Downgrade schema."""
 
     op.drop_table("jobs")
+    sa.Enum(name="job_status").drop(op.get_bind(), checkfirst=True)
