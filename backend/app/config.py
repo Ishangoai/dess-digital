@@ -21,11 +21,19 @@ class Settings(BaseSettings):
     # Gemini counts thinking tokens against this. OpenAI chat models may need a lower value.
     llm_max_tokens: int = 32768
     llm_log_prompt_chars: int = 2000
+    llm_timeout_seconds: int = 600
     gcp_project: str = ""
     gcp_location: str = "global"
     azure_endpoint: str = ""
     # Exposes /api/llm/* for manual testing. Keep off in prod: the endpoints spend LLM credits.
     llm_test_routes: bool = False
+
+    # Exposes /api/profiles and /api/drafts. Keep off on public deployments: no auth yet.
+    minutes_routes: bool = False
+    minutes_default_profile: str = "dess-standard"
+    minutes_max_output_tokens: int = 65536  # per pipeline stage
+    minutes_max_input_chars: int = 1_500_000
+    minutes_max_upload_bytes: int = 20_000_000
 
     @property
     def uploads_dir(self) -> Path:

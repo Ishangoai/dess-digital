@@ -1,0 +1,41 @@
+# Invented example case. Cases built from DESS material belong in reference/evals/cases.
+name: northbridge
+description: Phase-one-only approval with a cap, a declared interest, an unresolved concern,
+  an aside that should not be minuted, and an action with no agreed owner.
+agenda: ../../tests/fixtures/minutes/agenda.txt
+transcript: ../../tests/fixtures/minutes/transcript.txt
+assertions:
+  - type: outcome_present
+    item: "4"
+    outcome: approved
+  - type: body_matches
+    item: "4"
+    pattern: "(?i)phase one"
+    note: The approval was limited to phase one.
+  - type: body_matches
+    item: "4"
+    pattern: "1\\.2"
+    note: The cap must be kept.
+  - type: body_matches
+    item: "4"
+    pattern: "(?i)contingency"
+    note: Priya Shah's unresolved concern must not be dropped.
+  - type: outcome_absent
+    item: "3"
+    outcome: approved
+    note: The report was for noting only.
+  - type: question_exists
+    item: "4"
+    pattern: "(?i)tenant|letter|write"
+    note: Nobody was given the tenant letter, so the owner needs clarifying.
+  - type: body_not_matches
+    pattern: "(?i)car park"
+    note: The car park aside has no governance value.
+  - type: body_not_matches
+    pattern: "(?i)\\bquorate\\b|\\brobust\\b|\\bunanimous"
+    note: No unsupported boilerplate or evaluative words.
+  - type: segment_maps
+    source: T
+    lines: [7, 12]
+    item: "4"
+  - type: no_placeholders

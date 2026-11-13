@@ -1,0 +1,341 @@
+// Typed client for the minutes API (/api/drafts, /api/profiles). Mirrors backend/app/schemas.
+
+export type DraftStatus =
+	| 'analysing'
+	| 'awaiting_mapping_review'
+	| 'blocked'
+	| 'drafting'
+	| 'completed'
+	| 'failed';
+
+export const ASSOCIATIONS = [
+	'primary',
+	'related',
+	'additional_business',
+	'procedural',
+	'uncertain'
+] as const;
+export type Association = (typeof ASSOCIATIONS)[number];
+
+export interface LineRef {
+	source_id: string;
+	start: number;
+	end: number;
+}
+
+export interface MeetingInfo {
+	organisation: string | null;
+	body_name: string | null;
+	meeting_date: string | null;
+	meeting_type: string | null;
+	notes: string | null;
+}
+
+export interface AgendaItem {
+	ref: string;
+	heading: string;
+	stated_purpose: string | null;
+	purpose_kind: string;
+	linked_papers: string[];
+}
+
+export interface AdditionalBusiness {
+	key: string;
+	heading: string;
+}
+
+export interface EvidenceSegment {
+	segment_id: string;
+	source: LineRef;
+	item_ref: string | null;
+	association: Association;
+	summary: string;
+	apparent_outcome: string | null;
+}
+
+export interface EvidenceMap {
+	agenda_items: AgendaItem[];
+	additional_business: AdditionalBusiness[];
+	segments: EvidenceSegment[];
+}
+
+export interface EvidenceAnalysis extends EvidenceMap {
+	sources: { source_id: string; description: string; limitations: string[] }[];
+	essential_input_problems: { kind: string; description: string }[];
+	uncertainties: {
+		uncertainty_id: string;
+		item_ref: string | null;
+		description: string;
+		competing_readings: string[];
+		refs: LineRef[];
+	}[];
+}
+
+export interface MinuteParagraph {
+	paragraph_id: string;
+	kind: string;
+	outcome_type: string | null;
+	text: string;
+	based_on: string[];
+}
+
+export interface ClarificationQuestion {
+	question_id: string;
+	requirement_ids: string[];
+	anchor_kind: 'paragraph' | 'item_heading' | 'meeting_heading';
+	item_ref: string | null;
+	paragraph_id: string | null;
+	anchor_text: string | null;
+	question: string;
+}
+
+export interface DraftMinutes {
+	header: {
+		title: string;
+		meeting_date: string | null;
+		time_and_place: string | null;
+		present: string[];
+		in_attendance: string[];
+		apologies: string[];
+	};
+	items: { item_ref: string; heading: string; paragraphs: MinuteParagraph[] }[];
+	actions: {
+		action_id: string;
+		text: string;
+		owner: string | null;
+		due: string | null;
+		paragraph_id: string;
+	}[];
+	questions: ClarificationQuestion[];
+	drafting_notes: string[];
+}
+
+export interface Finding {
+	finding_id: string;
+	category: string;
+	significance: 'material' | 'minor';
+	item_ref: string | null;
+	issue: string;
+	suggested_change: string | null;
+}
+
+export interface LLMCall {
+	stage: string;
+	provider: string;
+	model: string;
+	input_tokens: number;
+	output_tokens: number;
+	latency_ms: number;
+	ok: boolean;
+	error: string | null;
+}
+
+export interface DraftRunSummary {
+	id: string;
+	status: DraftStatus;
+	profile_slug: string;
+	profile_version: number;
+	meeting_info: MeetingInfo;
+	created_at: string;
+	completed_at: string | null;
+}
+
+export interface DraftRun extends DraftRunSummary {
+	documents: { source_id: string; role: string; filename: string; line_count: number }[];
+	analysis: EvidenceAnalysis | null;
+	mapping: EvidenceMap | null;
+	mapping_edited: boolean;
+	draft: DraftMinutes | null;
+	lint: string[];
+	blocked_reasons: string[];
+	error: string | null;
+	error_stage: string | null;
+	llm_calls: LLMCall[];
+	usage_total: {
+		input_tokens: number;
+		output_tokens: number;
+		total_tokens: number;
+		latency_ms: number;
+	};
+	validation?: { findings: Finding[]; summary: string } | null;
+	reconsideration?: {
+		decisions: { finding_id: string; decision: string; reason: string }[];
+	} | null;
+}
+
+export interface SegmentReview {
+	segment_id: string;
+	source: LineRef;
+	item_ref: string | null;
+	association: Association;
+	summary: string;
+	excerpt: string;
+}
+
+export interface MappingReview {
+	status: DraftStatus;
+	mapping: EvidenceMap;
+	valid_item_refs: string[];
+	segments: SegmentReview[];
+	uncovered: LineRef[];
+	uncovered_excerpts: string[];
+}
+
+export type VersionStatus = 'proposed' | 'reviewed' | 'confirmed' | 'withdrawn';
+
+export interface ProfileSummary {
+	slug: string;
+	name: string;
+	description: string | null;
+	body_name: string | null;
+	based_on_slug: string | null;
+	active_version: number | null;
+	latest_version: number | null;
+}
+
+export interface VersionSummary {
+	version_number: number;
+	status: VersionStatus;
+	origin: string;
+	content_sha256: string;
+	change_summary: string | null;
+	created_by: string | null;
+	created_at: string;
+	confirmed_at: string | null;
+}
+
+export interface ProfileDetail extends ProfileSummary {
+	versions: VersionSummary[];
+}
+
+export interface ProfileDimension {
+	code: string;
+	title: string;
+	default_standard: string;
+}
+
+export interface ProfileVersion extends VersionSummary {
+	profile_slug: string;
+	content: {
+		name: string;
+		description: string | null;
+		hard_floors: string[];
+		minuting_policy: ProfileDimension[];
+		writing_style: ProfileDimension[];
+	};
+}
+
+export class ApiError extends Error {
+	constructor(
+		public status: number,
+		message: string
+	) {
+		super(message);
+	}
+}
+
+type Fetch = typeof fetch;
+
+function detailText(detail: unknown): string {
+	if (typeof detail === 'string') return detail;
+	if (Array.isArray(detail)) {
+		// FastAPI validation errors
+		return detail
+			.map((d) => (d && typeof d === 'object' && 'msg' in d ? String(d.msg) : JSON.stringify(d)))
+			.join('; ');
+	}
+	if (detail && typeof detail === 'object') {
+		const d = detail as Record<string, unknown>;
+		const list = d.mapping_errors ?? d.floor_violations;
+		if (Array.isArray(list)) return list.map(String).join('; ');
+	}
+	return JSON.stringify(detail);
+}
+
+async function check(response: Response): Promise<Response> {
+	if (response.ok) return response;
+	let message = response.statusText;
+	try {
+		const body = await response.json();
+		message = detailText(body.detail ?? body);
+	} catch {
+		// not JSON
+	}
+	if (response.status === 404 && message === 'Not Found') {
+		message = 'Not found. Is MINUTES_ROUTES=true set on the API?';
+	}
+	throw new ApiError(response.status, `${response.status}: ${message}`);
+}
+
+async function json<T>(response: Promise<Response>): Promise<T> {
+	return (await check(await response)).json();
+}
+
+function post(path: string, body?: unknown, f: Fetch = fetch) {
+	return f(path, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: body === undefined ? undefined : JSON.stringify(body)
+	});
+}
+
+export const api = {
+	listDrafts: (f: Fetch = fetch) => json<DraftRunSummary[]>(f('/api/drafts?limit=50')),
+	getDraft: (id: string, f: Fetch = fetch) =>
+		json<DraftRun>(f(`/api/drafts/${id}?debug=true`)),
+	createDraft: (form: FormData) =>
+		json<DraftRun>(fetch('/api/drafts', { method: 'POST', body: form })),
+	getMapping: (id: string, f: Fetch = fetch) =>
+		json<MappingReview>(f(`/api/drafts/${id}/mapping`)),
+	retryAnalysis: (id: string) => json<DraftRun>(post(`/api/drafts/${id}/analyse`)),
+	generate: (id: string, mapping: EvidenceMap | null) =>
+		json<DraftRun>(post(`/api/drafts/${id}/generate`, mapping ?? undefined)),
+	documentUrl: (id: string) => `/api/drafts/${id}/document.docx`,
+	documentWithTemplate: async (id: string, template: File) => {
+		const form = new FormData();
+		form.append('template', template);
+		const response = await check(
+			await fetch(`/api/drafts/${id}/document`, { method: 'POST', body: form })
+		);
+		return response.blob();
+	},
+
+	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),
+	getProfile: (slug: string, f: Fetch = fetch) =>
+		json<ProfileDetail>(f(`/api/profiles/${slug}`)),
+	getVersion: (slug: string, n: number, f: Fetch = fetch) =>
+		json<ProfileVersion>(f(`/api/profiles/${slug}/versions/${n}`)),
+	createVersion: (slug: string, content: unknown, change_summary: string) =>
+		json<ProfileVersion>(
+			post(`/api/profiles/${slug}/versions`, {
+				content,
+				change_summary: change_summary || null,
+				created_by: 'web-ui'
+			})
+		),
+	setStatus: (slug: string, n: number, status: VersionStatus) =>
+		json<ProfileVersion>(
+			post(`/api/profiles/${slug}/versions/${n}/status`, { status, by: 'web-ui' })
+		)
+};
+
+export const STATUS_LABELS: Record<DraftStatus, string> = {
+	analysing: 'Analysing',
+	awaiting_mapping_review: 'Awaiting mapping review',
+	blocked: 'Blocked',
+	drafting: 'Drafting',
+	completed: 'Completed',
+	failed: 'Failed'
+};
+
+export function errorText(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
+export function formatDate(value: string | null): string {
+	return value ? new Date(value).toLocaleString() : '-';
+}
+
+export function lineRef(r: LineRef): string {
+	return r.start === r.end ? `${r.source_id}${r.start}` : `${r.source_id}${r.start}-${r.end}`;
+}

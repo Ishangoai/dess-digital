@@ -1,0 +1,89 @@
+# Synthetic test profile. Invented wording only: the real DESS Standard text is client
+# material and must never be committed (it lives in the gitignored reference/ folder).
+schema_version: 1
+name: Test Standard Profile
+description: Minimal profile used by the test suite.
+hard_floors:
+  - Do not invent facts, decisions or reasons.
+  - Do not hide dissent, conflicts or unresolved concerns.
+minuting_policy:
+  - code: MP1
+    title: Meeting context
+    purpose: Identify the meeting and its participants.
+    default_standard: Record who met, when and in what capacity.
+    provisions:
+      - id: mp1-evidence-only
+        kind: evidential_fundamental
+        text: Only record attendance supported by the evidence.
+  - code: MP2
+    title: Evidential basis
+    purpose: Keep sources distinct.
+    default_standard: Distinguish what was supplied from what was concluded.
+  - code: MP3
+    title: Materiality
+    purpose: Scale detail to significance.
+    default_standard: Give more space to consequential business.
+  - code: MP4
+    title: Outcomes
+    purpose: Record what was decided.
+    default_standard: State each outcome precisely, with limits and conditions.
+    provisions:
+      - id: mp4-no-silent-approval
+        kind: evidential_fundamental
+        text: Never infer approval from silence or an agenda label.
+  - code: MP5
+    title: Reasoning
+    purpose: Record why.
+    default_standard: Record the reasons that were actually given.
+  - code: MP6
+    title: Challenge
+    purpose: Record oversight.
+    default_standard: Record the issue raised, the response and what remained open.
+  - code: MP7
+    title: Actions
+    purpose: Record follow-up.
+    default_standard: Record agreed actions with owners and dates only where agreed.
+  - code: MP8
+    title: Procedure
+    purpose: Record governance steps.
+    default_standard: Record interests, quorum issues and votes where they arose.
+  - code: MP9
+    title: Integrity
+    purpose: Keep the record honest.
+    default_standard: Keep later information separate from the meeting record.
+writing_style:
+  - code: WS1
+    title: Voice
+    purpose: Consistent register.
+    default_standard: Formal British English, reported speech, past tense.
+  - code: WS2
+    title: Structure
+    purpose: Follow the agenda.
+    default_standard: One numbered heading per agenda item.
+  - code: WS3
+    title: Concision
+    purpose: Be clear and brief.
+    default_standard: Remove repetition; keep figures with their units.
+  - code: WS4
+    title: Attribution
+    purpose: Name people only when it matters.
+    default_standard: Attribute collectively by default.
+    provisions:
+      - id: ws4-names-for-actions
+        kind: preference
+        text: Name action owners by role.
+  - code: WS5
+    title: Decisions
+    purpose: Make outcomes easy to find.
+    default_standard: Use a clear outcome verb for each decision.
+  - code: WS6
+    title: Presentation
+    purpose: Document conventions.
+    default_standard: Use British dates and consistent numbering.
+presentation:
+  date_style: long
+  status_label: Draft
+operational_instructions:
+  core: Produce a first draft of minutes from the agenda and the account of proceedings.
+  stages:
+    questions: Ask only questions whose answer would change the record.

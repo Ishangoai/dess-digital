@@ -11,7 +11,9 @@ dependencies = [
     "openai>=3.48.0",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
+    "python-docx>=1.2.0",
     "python-multipart>=0.0.33",
+    "pyyaml>=6.0.3",
     "sqlalchemy>=2.1.8",
     "uvicorn[standard]>=0.54.0",
 ]
@@ -22,6 +24,9 @@ dev = [
     "pytest>=9.2.0",
     "ruff>=0.17.4",
     "ty>=0.0.99",
+]
+ui = [
+    "gradio>=6.31",
 ]
 
 [tool.ruff]
@@ -46,3 +51,7 @@ extend-immutable-calls = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ty.src]
+# dev_ui needs the optional "ui" group (gradio): uv run --group ui ty check dev_ui
+exclude = ["dev_ui"]
