@@ -1,7 +1,7 @@
 import logging
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.llm import LLMClient, LLMOutputValidationError, LLMProviderError, Message
 from app.llm.providers.base import Provider
@@ -86,6 +86,17 @@ def test_logs_prompt_and_token_usage(caplog: pytest.LogCaptureFixture) -> None:
     assert "provider=fake model=fake-model" in message
     assert "input_tokens=12 output_tokens=5 total_tokens=17" in message
     assert "[user] 012... [13 more chars]" in message
+
+
+def test_sdk_validation_error_becomes_output_validation_error() -> None:
+    try:
+        Minutes.model_validate_json('{"title": "cut off')
+    except ValidationError as e:
+        sdk_error = e
+    client = LLMClient(FakeProvider(error=sdk_error), "fake-model")
+
+    with pytest.raises(LLMOutputValidationError):
+        client.generate_structured("hi", Minutes)
 
 
 def test_logs_and_reraises_provider_errors(caplog: pytest.LogCaptureFixture) -> None:

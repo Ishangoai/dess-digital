@@ -92,7 +92,7 @@ class LLMClient:
         start = time.perf_counter()
         try:
             completion = self.provider.complete(request)
-        except Exception:
+        except Exception as e:
             log.exception(
                 "llm call failed provider=%s model=%s schema=%s latency_ms=%.0f prompt=%r",
                 self.provider.name,
@@ -101,6 +101,12 @@ class LLMClient:
                 (time.perf_counter() - start) * 1000,
                 self._prompt_preview(request),
             )
+            if isinstance(e, ValidationError):
+                # SDK .parse() helpers (OpenAI, Anthropic) validate inside the call, before the
+                # adapter's truncation/refusal checks, so a pydantic error can escape the adapter.
+                raise LLMOutputValidationError(
+                    f"{self.provider.name} output does not match {schema_name}", ""
+                ) from e
             raise
         latency_ms = (time.perf_counter() - start) * 1000
 
