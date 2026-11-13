@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.db import SessionLocal, create_tables
+from app.db import SessionLocal
 from app.minutes.profile_content import load_profile_file
 from app.services.profile import seed_profile
 
@@ -29,7 +29,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"invalid profile file {args.path}: {e}")
         return 1
 
-    create_tables()
     with SessionLocal() as db:
         result = seed_profile(db, content, slug=args.slug, confirm_version=args.confirm, by=args.by)
         v = result.version

@@ -40,10 +40,15 @@ def get_db() -> Iterator[Session]:
         yield session
 
 
-def create_tables(bind: Engine | None = None) -> None:
-    """Create missing tables for every model in app.models. Existing tables are not altered."""
+def import_models() -> None:
+    """Register every app.models module on Base.metadata."""
     import app.models
 
     for module in pkgutil.iter_modules(app.models.__path__):
         importlib.import_module(f"app.models.{module.name}")
-    Base.metadata.create_all(bind or engine)
+
+
+def create_tables(bind: Engine) -> None:
+    """Create all tables directly. Tests only: real databases use alembic migrations."""
+    import_models()
+    Base.metadata.create_all(bind)

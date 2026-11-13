@@ -18,8 +18,11 @@ docker compose up --build   # http://localhost:8080
 Dev without Docker:
 
 ```bash
-cd backend && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
-cd frontend && bun install && bun run dev                       # :5173, proxies /api
+# Terminal 1: Backend
+cd backend && cp .env.example .env && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
+
+# Terminal 2: Frontend
+cd frontend && bun install && bun run dev
 ```
 
 The backend needs a database. Either run Postgres in Docker:
@@ -28,7 +31,13 @@ The backend needs a database. Either run Postgres in Docker:
 docker run -d --name dess-pg -e POSTGRES_USER=dess -e POSTGRES_PASSWORD=dess -e POSTGRES_DB=dess -p 5432:5432 postgres:17-alpine
 ```
 
-or set `DATABASE_URL=sqlite:///./data/dev.db` in `backend/.env` for a zero-setup local database. Tables are created on startup.
+or set `DATABASE_URL=sqlite:///./data/dev.db` in `backend/.env` for a zero-setup local database. Then create the tables (and again after pulling new migrations):
+
+```bash
+cd backend && uv run alembic upgrade head
+```
+
+Docker Compose runs migrations automatically (the `migrate` service). After changing a model, add a migration with `uv run alembic revision --autogenerate -m "..."` and review it.
 
 Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded from a local file. The DESS Standard text is client material, so it lives in the gitignored `reference/` folder and is never committed:
 
