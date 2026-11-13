@@ -5,7 +5,10 @@ description = "dess-digital API and background worker"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.1",
+    "anthropic[vertex]>=2.7.0",
     "fastapi>=0.162.0",
+    "google-genai>=3.0.0",
+    "openai>=3.48.0",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
     "python-multipart>=0.0.33",

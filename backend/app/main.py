@@ -1,9 +1,14 @@
+import logging
 import os
 
 import uvicorn
 from fastapi import APIRouter, FastAPI
 
-from app.routers import files, job
+from app.config import settings
+from app.routers import files, job, llm
+
+# Root handler so app loggers (e.g. app.llm prompt/token logs) reach stdout under uvicorn.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 app = FastAPI(
     title="dess-digital",
@@ -21,6 +26,8 @@ def health() -> dict[str, str]:
 
 api.include_router(files.router)
 api.include_router(job.router)
+if settings.llm_test_routes:
+    api.include_router(llm.router)
 
 app.include_router(api)
 

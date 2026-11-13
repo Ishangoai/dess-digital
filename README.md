@@ -38,7 +38,9 @@ Push to `development`: `.github/workflows/deploy.yml` builds both images, pushes
 
 GitHub `development` environment needs:
 
-- secrets: `GCP_PROJECT_NAME`, `GCP_PROJECT_NUMBER`, `POSTGRES_PASSWORD`, `LLM_API_KEY`
-- vars: `LLM_PROVIDER` (`vertex` | `bedrock` | `azure`), `LLM_MODEL`, `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
+- secrets: `GCP_PROJECT_NAME`, `GCP_PROJECT_NUMBER`, `POSTGRES_PASSWORD`, `LLM_API_KEY` (not needed for `vertex` / `anthropic_vertex`)
+- vars: `LLM_PROVIDER` (`openai` | `azure` | `gemini` | `vertex` | `anthropic` | `anthropic_vertex`), `LLM_MODEL`, `GCP_LOCATION` (optional, default `global`), `AZURE_ENDPOINT` (azure only), `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
+
+LLM calls go through `backend/app/llm`. The team default is `LLM_PROVIDER=gemini` with an AI Studio key.
 
 VM name and zone are set at the top of the workflow.
