@@ -6,7 +6,7 @@ Self-hostable document processing app. Runs on a single VM with Docker Compose.
 
 - `backend/` FastAPI API (`app/main.py`) and background worker (`app/worker.py`). uv, pytest, ruff, ty.
 - `frontend/` SvelteKit static SPA built with bun, served by Caddy which proxies `/api` and handles HTTPS. Playwright e2e.
-- `docker-compose.yml` `db` (Postgres), `api`, `worker`, `web`. Files and Postgres data live under `DATA_DIR`.
+- `docker-compose.yml` `db` (Postgres), `api`, `worker`, `web`. Files and Postgres data live under `DATA_DIR` (defaults to `./data` when run locally).
 
 ## Run locally
 
@@ -19,7 +19,7 @@ Dev without Docker:
 
 ```bash
 # Terminal 1: Backend
-cd backend && cp .env.example .env && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
+cd backend && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
 
 # Terminal 2: Frontend
 cd frontend && bun install && bun run dev
@@ -35,6 +35,8 @@ cd frontend && bun run check && bun run test:e2e
 ## Deploy
 
 Push to `development`: `.github/workflows/deploy.yml` builds both images, pushes to Artifact Registry, then over IAP SSH writes `.env` to the VM and runs `docker compose up -d`.
+
+When self-hosting elsewhere, set `DATA_DIR` in `.env` to any host path (e.g., `/mnt/disks/data`)
 
 GitHub `development` environment needs:
 
