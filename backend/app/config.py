@@ -35,9 +35,6 @@ class Settings(BaseSettings):
     minutes_max_input_chars: int = 1_500_000
     minutes_max_upload_bytes: int = 20_000_000
 
-    # New: reads DATA_DIR from your .env, defaults to ./data
-    data_dir: Path = Path("./data")
-
     @property
     def uploads_dir(self) -> Path:
         """Resolves to the persisted mount: /data/files/uploads."""
