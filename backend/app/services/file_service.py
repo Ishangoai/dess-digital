@@ -10,13 +10,12 @@ async def save_upload_file(
     upload_file: UploadFile,
     target_dir: Path,
     file_type: str,
-    allowed_types: list[str] | None = None,  # <-- New parameter
+    allowed_types: list[str] | None = None,
 ) -> dict:
     """Saves a single file in chunks and returns its metadata."""
     if not upload_file.filename:
         return {}
 
-    # --- Type Validation ---
     if allowed_types and upload_file.content_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -25,7 +24,6 @@ async def save_upload_file(
                 "unsupported format. Please upload a PDF or Word document (.pdf, .doc, .docx)."
             ),
         )
-    # -----------------------
 
     safe_filename = f"{file_type}_{Path(upload_file.filename).name}"
     file_path = target_dir / safe_filename
