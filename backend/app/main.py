@@ -3,7 +3,7 @@ import os
 import uvicorn
 from fastapi import APIRouter, FastAPI
 
-from app.routers import files
+from app.routers import files, job
 
 app = FastAPI(
     title="dess-digital",
@@ -20,6 +20,7 @@ def health() -> dict[str, str]:
 
 
 api.include_router(files.router)
+api.include_router(job.router)
 
 app.include_router(api)
 

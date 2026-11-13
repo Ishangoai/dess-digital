@@ -1,4 +1,48 @@
 <script lang="ts">
+    import { onMount } from "svelte";
+
+    interface Job {
+        id: string;
+        function_name: string;
+        function_params: Record<string, unknown>;
+        status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+        created_at: string;
+        started_at: string | null;
+        completed_at: string | null;
+        error_message: string | null;
+    }
+
+    let jobs = $state<Job[]>([]);
+    let isLoadingJobs = $state(true);
+    let jobsError = $state("");
+
+    async function loadJobs() {
+        try {
+            const response = await fetch("/api/jobs/");
+
+            if (!response.ok) {
+                throw new Error("Failed to retrieve jobs.");
+            }
+
+            jobs = await response.json();
+            jobsError = "";
+        } catch (err: unknown) {
+            jobsError = err instanceof Error ? err.message : "An unexpected error occurred.";
+        } finally {
+            isLoadingJobs = false;
+        }
+    }
+
+    function formatDate(value: string | null): string {
+        return value ? new Date(value).toLocaleString() : "-";
+    }
+
+    onMount(() => {
+        loadJobs();
+        const interval = window.setInterval(loadJobs, 5000);
+        return () => window.clearInterval(interval);
+    });
+
     let files = $state({
         agenda: null as FileList | null,
         transcript: null as FileList | null,
@@ -148,6 +192,61 @@
             </div>
         {/if}
     </div>
+
+    <section class="jobs-section">
+        <div class="jobs-heading">
+            <h2>Background Jobs</h2>
+            <button class="refresh-button" onclick={loadJobs}>Refresh</button>
+        </div>
+
+        {#if isLoadingJobs}
+            <p>Loading jobs...</p>
+        {:else if jobsError}
+            <p class="jobs-error">{jobsError}</p>
+        {:else if jobs.length === 0}
+            <p class="empty-message">No jobs have been submitted yet.</p>
+        {:else}
+            <div class="jobs-list">
+                {#each jobs as job (job.id)}
+                    <article class="job-card">
+                        <div class="job-heading">
+                            <h3>{job.function_name}</h3>
+                            <span
+                                class="job-status"
+                                class:pending={job.status === "PENDING"}
+                                class:running={job.status === "RUNNING"}
+                                class:completed={job.status === "COMPLETED"}
+                                class:failed={job.status === "FAILED"}
+                            >
+                                {job.status}
+                            </span>
+                        </div>
+
+                        <p class="job-id">ID: {job.id}</p>
+
+                        <dl>
+                            <div>
+                                <dt>Created</dt>
+                                <dd>{formatDate(job.created_at)}</dd>
+                            </div>
+                            <div>
+                                <dt>Started</dt>
+                                <dd>{formatDate(job.started_at)}</dd>
+                            </div>
+                            <div>
+                                <dt>Completed</dt>
+                                <dd>{formatDate(job.completed_at)}</dd>
+                            </div>
+                        </dl>
+
+                        {#if job.error_message}
+                            <p class="jobs-error">Error: {job.error_message}</p>
+                        {/if}
+                    </article>
+                {/each}
+            </div>
+        {/if}
+    </section>
 </main>
 
 <style>
@@ -379,5 +478,101 @@
     @keyframes slideIn {
         from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Background Jobs */
+    .jobs-section {
+        width: 100%;
+        max-width: 520px;
+        margin-top: 2.5rem;
+    }
+
+    .jobs-heading,
+    .job-heading {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .jobs-heading {
+        margin-bottom: 1rem;
+    }
+
+    .jobs-heading h2 {
+        margin: 0;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .refresh-button {
+        margin-top: 0;
+        padding: 0.45rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    .empty-message {
+        color: #64748b;
+        padding: 1.25rem 0;
+    }
+
+    .jobs-error {
+        color: #991b1b;
+        font-size: 0.875rem;
+    }
+
+    .jobs-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .job-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .job-card h3 {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    .job-id {
+        color: #64748b;
+        font-size: 0.8rem;
+        overflow-wrap: anywhere;
+    }
+
+    .job-status {
+        padding: 0.25rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .pending { background: #fef3c7; color: #92400e; }
+    .running { background: #dbeafe; color: #1e40af; }
+    .completed { background: #dcfce7; color: #166534; }
+    .failed { background: #fee2e2; color: #991b1b; }
+
+    dl {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 0.9rem;
+        margin-bottom: 0;
+    }
+
+    dt {
+        color: #64748b;
+        font-size: 0.8rem;
+    }
+
+    dd {
+        margin: 0.25rem 0 0;
+        font-size: 0.85rem;
     }
 </style>
