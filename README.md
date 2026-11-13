@@ -18,8 +18,11 @@ docker compose up --build   # http://localhost:8080
 Dev without Docker:
 
 ```bash
-cd backend && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
-cd frontend && bun install && bun run dev                       # :5173, proxies /api
+# Terminal 1: Backend
+cd backend && cp .env.example .env && uv sync && uv run uvicorn app.main:app --reload   # :8000, docs at /api/docs
+
+# Terminal 2: Frontend
+cd frontend && bun install && bun run dev
 ```
 
 ## Checks
