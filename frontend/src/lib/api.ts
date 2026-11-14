@@ -120,6 +120,7 @@ export interface Finding {
 }
 
 export interface LLMCall {
+	id: string;
 	stage: string;
 	provider: string;
 	model: string;
@@ -128,6 +129,15 @@ export interface LLMCall {
 	latency_ms: number;
 	ok: boolean;
 	error: string | null;
+	created_at: string;
+}
+
+/** One call in full; null text means it was not stored (calls made before it was recorded). */
+export interface LLMCallDetail extends LLMCall {
+	system_prompt: string | null;
+	prompt: string | null;
+	output: string | null;
+	raw_output: string | null;
 }
 
 export interface DraftRunSummary {
@@ -136,6 +146,7 @@ export interface DraftRunSummary {
 	profile_slug: string;
 	profile_version: number;
 	meeting_info: MeetingInfo;
+	title: string;
 	created_at: string;
 	completed_at: string | null;
 }
@@ -285,6 +296,8 @@ export const api = {
 		json<DraftRun>(f(`/api/drafts/${id}?debug=true`)),
 	createDraft: (form: FormData) =>
 		json<DraftRun>(fetch('/api/drafts', { method: 'POST', body: form })),
+	getCalls: (id: string, f: Fetch = fetch) =>
+		json<LLMCallDetail[]>(f(`/api/drafts/${id}/calls`)),
 	getMapping: (id: string, f: Fetch = fetch) =>
 		json<MappingReview>(f(`/api/drafts/${id}/mapping`)),
 	retryAnalysis: (id: string) => json<DraftRun>(post(`/api/drafts/${id}/analyse`)),
@@ -321,7 +334,7 @@ export const api = {
 
 export const STATUS_LABELS: Record<DraftStatus, string> = {
 	analysing: 'Analysing',
-	awaiting_mapping_review: 'Awaiting mapping review',
+	awaiting_mapping_review: 'Needs review',
 	blocked: 'Blocked',
 	drafting: 'Drafting',
 	completed: 'Completed',
@@ -338,4 +351,75 @@ export function formatDate(value: string | null): string {
 
 export function lineRef(r: LineRef): string {
 	return r.start === r.end ? `${r.source_id}${r.start}` : `${r.source_id}${r.start}-${r.end}`;
+}
+
+export const ASSOCIATION_INFO: Record<Association, { label: string; hint: string }> = {
+	primary: { label: 'Main discussion', hint: 'Where this agenda item was actually discussed' },
+	related: { label: 'Related', hint: 'Touches on this item; the main discussion is elsewhere' },
+	additional_business: { label: 'Not on agenda', hint: 'Business raised that was not on the agenda' },
+	procedural: { label: 'Procedural', hint: 'Attendance, interests, quorum and similar' },
+	uncertain: { label: 'Unsure', hint: 'The analysis could not tell which item this belongs to' }
+};
+
+export const SOURCE_ROLES: Record<string, string> = {
+	agenda: 'Agenda',
+	transcript: 'Transcript',
+	notes: 'Notes',
+	paper: 'Paper'
+};
+
+export function isRunning(status: DraftStatus): boolean {
+	return status === 'analysing' || status === 'drafting';
+}
+
+export function formatDay(value: string): string {
+	const d = new Date(value);
+	const today = new Date();
+	const days = Math.round((today.setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000);
+	if (days === 0) return `Today, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+	if (days === 1) return 'Yesterday';
+	return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+export function fileSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function plural(n: number, word: string): string {
+	return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** Fired after a draft is created or changes stage, so the sidebar refreshes. */
+export const DRAFTS_CHANGED = 'drafts:changed';
+export function draftsChanged(): void {
+	window.dispatchEvent(new Event(DRAFTS_CHANGED));
+}
+
+export const STAGE_INFO: Record<string, { label: string; about: string }> = {
+	evidence: {
+		label: 'Read the evidence',
+		about: 'Maps the transcript and notes to the agenda items and records uncertainties.'
+	},
+	policy: {
+		label: 'Select content',
+		about: 'Applies the Minuting Policy (MP1 to MP9): what belongs in the record and what needs clarifying.'
+	},
+	style: {
+		label: 'Write the minutes',
+		about: 'Applies the Writing Style (WS1 to WS6) to write the draft and the questions.'
+	},
+	validation: {
+		label: 'Check the draft',
+		about: 'Independently checks the draft and questions against the evidence and the profile.'
+	},
+	reconsideration: {
+		label: 'Reconsider',
+		about: "Considers the check's findings once and revises the draft where they are supported."
+	}
+};
+
+export function compact(n: number): string {
+	return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }

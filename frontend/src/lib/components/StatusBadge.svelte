@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { STATUS_LABELS, type DraftStatus } from '#lib/api.ts';
+	import { isRunning, STATUS_LABELS, type DraftStatus } from '#lib/api.ts';
 
 	let { status }: { status: DraftStatus } = $props();
 
@@ -14,7 +14,7 @@
 </script>
 
 <span class="badge {tone[status]}">
-	{#if status === 'analysing' || status === 'drafting'}<span class="spinner"></span>{/if}
+	{#if isRunning(status)}<span class="spinner"></span>{:else}<span class="dot"></span>{/if}
 	{STATUS_LABELS[status]}
 </span>
 
@@ -22,10 +22,10 @@
 	.badge {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.15rem 0.6rem;
+		gap: 0.4rem;
+		padding: 0.25rem 0.65rem;
 		border-radius: 999px;
-		font-size: 0.75rem;
+		font-size: 0.76rem;
 		font-weight: 600;
 		white-space: nowrap;
 	}
@@ -33,6 +33,13 @@
 	.badge .spinner {
 		width: 0.7rem;
 		height: 0.7rem;
+	}
+
+	.dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: currentColor;
 	}
 
 	.info {

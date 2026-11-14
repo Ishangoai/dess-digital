@@ -89,6 +89,11 @@ class LLMCall(Base):
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str | None] = mapped_column(Text)
     raw_output: Mapped[str | None] = mapped_column(Text)  # kept only when parsing failed
+    # What was sent and received, for the AI activity view.
+    # Deferred: large, and only loaded by GET /api/drafts/{id}/calls.
+    system_prompt: Mapped[str | None] = mapped_column(Text, deferred=True)
+    prompt: Mapped[str | None] = mapped_column(Text, deferred=True)
+    output: Mapped[str | None] = mapped_column(Text, deferred=True)  # structured response, JSON
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[DraftRun] = relationship(back_populates="llm_calls")

@@ -1,4 +1,5 @@
 import io
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -248,3 +249,56 @@ def test_failed_analysis_can_be_retried_without_reupload(
 def test_only_failed_analysis_can_be_retried(client: TestClient) -> None:
     run_id = create(client)["id"]
     assert client.post(f"/api/drafts/{run_id}/analyse").status_code == 409
+
+
+def test_calls_show_what_was_sent_and_received(client: TestClient) -> None:
+    run = create(client, auto_confirm_mapping="true")
+    calls = client.get(f"/api/drafts/{run['id']}/calls").json()
+
+    assert [c["stage"] for c in calls] == [c["stage"] for c in run["llm_calls"]]
+    evidence, style = calls[0], next(c for c in calls if c["stage"] == "style")
+    assert "Minutes Profile" in evidence["system_prompt"]
+    assert "<transcript" in evidence["prompt"] and "<task>" in evidence["prompt"]
+    assert "<selection>" in style["prompt"]
+    assert json.loads(style["output"])["items"]
+    # The run payload stays small.
+    assert "prompt" not in run["llm_calls"][0]
+
+
+def test_failed_call_keeps_its_input(client: TestClient, provider: ScriptedProvider) -> None:
+    run_id = create(client)["id"]
+    provider.responses["DraftMinutes"] = LLMProviderError("quota exceeded")
+    client.post(f"/api/drafts/{run_id}/generate")
+
+    failed = client.get(f"/api/drafts/{run_id}/calls").json()[-1]
+    assert failed["ok"] is False
+    assert "<task>" in failed["prompt"]
+    assert failed["output"] is None
+
+
+def test_background_upload_returns_at_once_then_maps(client: TestClient) -> None:
+    response = client.post(
+        "/api/drafts", files=files("agenda.txt", "transcript.txt"), data={"background": "true"}
+    )
+    assert response.status_code == 201, response.text
+    created = response.json()
+    assert created["status"] == "analysing"
+    assert created["llm_calls"] == []
+
+    # TestClient runs background tasks before returning, so stage 1 has finished here.
+    run = client.get(f"/api/drafts/{created['id']}").json()
+    assert run["status"] == "awaiting_mapping_review"
+    assert [c["stage"] for c in run["llm_calls"]] == ["evidence"]
+
+
+def test_background_failure_marks_run_failed(
+    client: TestClient, provider: ScriptedProvider
+) -> None:
+    provider.responses["EvidenceAnalysis"] = LLMProviderError("quota exceeded")
+    created = client.post(
+        "/api/drafts", files=files("agenda.txt", "transcript.txt"), data={"background": "true"}
+    ).json()
+
+    run = client.get(f"/api/drafts/{created['id']}").json()
+    assert run["status"] == "failed"
+    assert run["error_stage"] == "evidence"

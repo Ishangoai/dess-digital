@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -25,7 +26,7 @@ from app.minutes.evidence import MeetingInfo, SourceRole
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import EvidenceMap
 from app.models.draft import DraftRun, DraftStatus
-from app.schemas.draft import DraftRunOut, DraftRunSummary, MappingReview
+from app.schemas.draft import DraftRunOut, DraftRunSummary, LLMCallDetail, MappingReview
 from app.services import draft as svc
 
 router = APIRouter(prefix="/drafts", tags=["Draft minutes"])
@@ -65,6 +66,7 @@ async def _upload(role: SourceRole, file: UploadFile | None) -> svc.Upload | Non
 async def create_draft(
     db: DB,
     llm: LLM,
+    tasks: BackgroundTasks,
     agenda: Annotated[UploadFile, File(description="Agenda (required)")],
     transcript: Annotated[UploadFile | None, File()] = None,
     notes: Annotated[UploadFile | None, File()] = None,
@@ -76,8 +78,13 @@ async def create_draft(
     meeting_date: Annotated[str | None, Form()] = None,
     meeting_type: Annotated[str | None, Form()] = None,
     auto_confirm_mapping: Annotated[bool, Form()] = False,
+    background: Annotated[bool, Form()] = False,
 ) -> DraftRunOut:
-    """Upload the evidence and map it to the agenda. With auto_confirm_mapping, also draft."""
+    """Upload the evidence and map it to the agenda. With auto_confirm_mapping, also draft.
+
+    With background=true the run is returned at once with status analysing, and stage 1 runs
+    after the response; poll GET /api/drafts/{id} to follow it.
+    """
     uploads = [
         await _upload(SourceRole.AGENDA, agenda),
         await _upload(SourceRole.TRANSCRIPT, transcript),
@@ -98,8 +105,13 @@ async def create_draft(
             meeting_info=info,
             profile_slug=profile_slug or settings.minutes_default_profile,
             profile_version=profile_version,
+            analyse=not background,
         )
-        if auto_confirm_mapping and run.status == DraftStatus.AWAITING_MAPPING_REVIEW:
+        if background:
+            tasks.add_task(
+                svc.analyse_in_background, db.get_bind(), run.id, llm, auto_confirm_mapping
+            )
+        elif auto_confirm_mapping and run.status == DraftStatus.AWAITING_MAPPING_REVIEW:
             run = svc.generate(db, llm, run)
     except UnsupportedFileError as e:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
@@ -123,6 +135,14 @@ def list_drafts(
 def get_draft(run_id: uuid.UUID, db: DB, debug: bool = False) -> DraftRunOut:
     """The run with its draft. debug=true adds the intermediate stage outputs."""
     return DraftRunOut.of(_run(db, run_id), debug=debug)
+
+
+@router.get("/{run_id}/calls")
+def get_calls(run_id: uuid.UUID, db: DB) -> list[LLMCallDetail]:
+    """Every LLM call in full: the instructions and message sent, and the response."""
+    return [
+        LLMCallDetail.model_validate(c, from_attributes=True) for c in _run(db, run_id).llm_calls
+    ]
 
 
 @router.get("/{run_id}/mapping")

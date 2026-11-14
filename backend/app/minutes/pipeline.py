@@ -38,14 +38,20 @@ class StageResult[T]:
     provider: str
     model: str
     latency_ms: float
+    system: str = ""  # instructions sent with the call
+    message: str = ""  # evidence, guidance, earlier outputs and task
 
 
 class StageError(Exception):
-    def __init__(self, stage: PipelineStage, cause: LLMError) -> None:
+    def __init__(
+        self, stage: PipelineStage, cause: LLMError, system: str = "", message: str = ""
+    ) -> None:
         super().__init__(f"{stage} stage failed: {cause}")
         self.stage = stage
         self.cause = cause
         self.raw_text = cause.raw_text if isinstance(cause, LLMOutputValidationError) else None
+        self.system = system
+        self.message = message
 
 
 @dataclass
@@ -70,13 +76,16 @@ class Pipeline:
     def _call[T: BaseModel](
         self, stage: PipelineStage, schema: type[T], message: str
     ) -> StageResult[T]:
+        system = self.ctx.system()
         try:
             r = self.llm.generate_structured(
-                message, schema=schema, system=self.ctx.system(), max_tokens=self.max_tokens
+                message, schema=schema, system=system, max_tokens=self.max_tokens
             )
         except LLMError as e:
-            raise StageError(stage, e) from e
-        return StageResult(stage, r.output, r.usage, r.provider, r.model, r.latency_ms)
+            raise StageError(stage, e, system, message) from e
+        return StageResult(
+            stage, r.output, r.usage, r.provider, r.model, r.latency_ms, system, message
+        )
 
     def analyse_evidence(self) -> StageResult[EvidenceAnalysis]:
         guidance = self.ctx.profile.operational_instructions.stages.evidence
