@@ -1,17 +1,12 @@
 <script lang="ts">
 	import '../app.css';
 	import favicon from '#lib/assets/favicon.svg';
-	import { page } from '$app/state';
+	import Icon from '#lib/components/Icon.svelte';
+	import Sidebar from '#lib/components/Sidebar.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
-
-	const links = [
-		{ href: '/', label: 'Drafts', match: (p: string) => p === '/' || p.startsWith('/drafts/') && p !== '/drafts/new' },
-		{ href: '/drafts/new', label: 'New draft', match: (p: string) => p === '/drafts/new' },
-		{ href: '/profiles', label: 'Profiles', match: (p: string) => p.startsWith('/profiles') },
-		{ href: '/uploads', label: 'File uploads', match: (p: string) => p.startsWith('/uploads') }
-	];
+	let menuOpen = $state(false);
 </script>
 
 <svelte:head>
@@ -19,64 +14,100 @@
 	<title>DESS Minutes</title>
 </svelte:head>
 
-<header class="topbar">
-	<a class="brand" href="/">DESS Minutes</a>
-	<nav>
-		{#each links as link (link.href)}
-			<a href={link.href} class:active={link.match(page.url.pathname)}>{link.label}</a>
-		{/each}
-	</nav>
-</header>
+<div class="shell">
+	<header class="mobile-bar">
+		<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
+			<Icon name="menu" size={18} />
+		</button>
+		<a class="mobile-brand" href="/">DESS Minutes</a>
+	</header>
 
-<main class="content">
-	{@render children()}
-</main>
+	<aside class="side" class:open={menuOpen}>
+		<Sidebar onnavigate={() => (menuOpen = false)} />
+	</aside>
+	{#if menuOpen}
+		<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
+	{/if}
+
+	<main class="main">
+		{@render children()}
+	</main>
+</div>
 
 <style>
-	.topbar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.5rem 1.5rem;
-		padding: 0.75rem 1rem;
-		background: var(--surface);
-		border-bottom: 1px solid var(--border);
+	.shell {
+		display: grid;
+		grid-template-columns: 264px minmax(0, 1fr);
+		min-height: 100vh;
+		background: linear-gradient(to right, var(--sidebar) 263px, var(--border) 263px 264px, var(--bg) 264px);
 	}
 
-	.brand {
-		font-weight: 700;
-		color: var(--text);
-		text-decoration: none;
+	.side {
+		position: sticky;
+		top: 0;
+		height: 100vh;
+		background: var(--sidebar);
+		border-right: 1px solid var(--border);
 	}
 
-	nav {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
+	.main {
+		min-width: 0;
+		padding: 2rem 2.5rem 4rem;
 	}
 
-	nav a {
-		color: var(--muted);
-		text-decoration: none;
-		font-size: 0.9rem;
-		padding: 0.35rem 0.65rem;
-		border-radius: 6px;
+	.mobile-bar,
+	.scrim {
+		display: none;
 	}
 
-	nav a:hover {
-		color: var(--text);
-		background: var(--bg);
-	}
+	@media (max-width: 860px) {
+		.shell {
+			grid-template-columns: 1fr;
+			background: var(--bg);
+		}
 
-	nav a.active {
-		color: var(--accent);
-		background: var(--accent-soft);
-		font-weight: 500;
-	}
+		.mobile-bar {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			padding: 0.5rem 0.75rem;
+			background: var(--surface);
+			border-bottom: 1px solid var(--border);
+			position: sticky;
+			top: 0;
+			z-index: 20;
+		}
 
-	.content {
-		max-width: 1200px;
-		margin: 0 auto;
-		padding: 1.5rem 1rem 3rem;
+		.mobile-brand {
+			font-weight: 650;
+			color: var(--text);
+		}
+
+		.side {
+			position: fixed;
+			inset: 0 auto 0 0;
+			width: 280px;
+			z-index: 40;
+			transform: translateX(-100%);
+			transition: transform 0.2s ease;
+		}
+
+		.side.open {
+			transform: none;
+			box-shadow: var(--shadow-lg);
+		}
+
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 30;
+			border: none;
+			background: rgba(17, 24, 39, 0.35);
+		}
+
+		.main {
+			padding: 1.25rem 1rem 3rem;
+		}
 	}
 </style>

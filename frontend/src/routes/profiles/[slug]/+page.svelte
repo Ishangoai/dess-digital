@@ -62,7 +62,7 @@
 	}
 </script>
 
-<div class="stack">
+<div class="stack contained">
 	<div>
 		<a class="small" href="/profiles">All profiles</a>
 		<h1>{profile.name}</h1>

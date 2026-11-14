@@ -136,6 +136,7 @@ export interface DraftRunSummary {
 	profile_slug: string;
 	profile_version: number;
 	meeting_info: MeetingInfo;
+	title: string;
 	created_at: string;
 	completed_at: string | null;
 }
@@ -321,7 +322,7 @@ export const api = {
 
 export const STATUS_LABELS: Record<DraftStatus, string> = {
 	analysing: 'Analysing',
-	awaiting_mapping_review: 'Awaiting mapping review',
+	awaiting_mapping_review: 'Needs review',
 	blocked: 'Blocked',
 	drafting: 'Drafting',
 	completed: 'Completed',
@@ -338,4 +339,48 @@ export function formatDate(value: string | null): string {
 
 export function lineRef(r: LineRef): string {
 	return r.start === r.end ? `${r.source_id}${r.start}` : `${r.source_id}${r.start}-${r.end}`;
+}
+
+export const ASSOCIATION_INFO: Record<Association, { label: string; hint: string }> = {
+	primary: { label: 'Main discussion', hint: 'Where this agenda item was actually discussed' },
+	related: { label: 'Related', hint: 'Touches on this item; the main discussion is elsewhere' },
+	additional_business: { label: 'Not on agenda', hint: 'Business raised that was not on the agenda' },
+	procedural: { label: 'Procedural', hint: 'Attendance, interests, quorum and similar' },
+	uncertain: { label: 'Unsure', hint: 'The analysis could not tell which item this belongs to' }
+};
+
+export const SOURCE_ROLES: Record<string, string> = {
+	agenda: 'Agenda',
+	transcript: 'Transcript',
+	notes: 'Notes',
+	paper: 'Paper'
+};
+
+export function isRunning(status: DraftStatus): boolean {
+	return status === 'analysing' || status === 'drafting';
+}
+
+export function formatDay(value: string): string {
+	const d = new Date(value);
+	const today = new Date();
+	const days = Math.round((today.setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000);
+	if (days === 0) return `Today, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+	if (days === 1) return 'Yesterday';
+	return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+export function fileSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function plural(n: number, word: string): string {
+	return `${n} ${word}${n === 1 ? '' : 's'}`;
+}
+
+/** Fired after a draft is created or changes stage, so the sidebar refreshes. */
+export const DRAFTS_CHANGED = 'drafts:changed';
+export function draftsChanged(): void {
+	window.dispatchEvent(new Event(DRAFTS_CHANGED));
 }

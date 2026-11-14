@@ -17,7 +17,7 @@
 	});
 </script>
 
-<div class="stack">
+<div class="stack contained">
 	<div>
 		<h1>Minutes profiles</h1>
 		<p class="muted">

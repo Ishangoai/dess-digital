@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -48,20 +49,37 @@ class DraftRunSummary(BaseModel):
     profile_slug: str
     profile_version: int
     meeting_info: MeetingInfo
+    title: str
     created_at: datetime
     completed_at: datetime | None
 
     @classmethod
     def of(cls, run: DraftRun) -> "DraftRunSummary":
+        info = MeetingInfo.model_validate(run.meeting_info or {})
         return cls(
             id=run.id,
             status=run.status,
             profile_slug=run.profile_version.profile.slug,
             profile_version=run.profile_version.version_number,
-            meeting_info=MeetingInfo.model_validate(run.meeting_info or {}),
+            meeting_info=info,
+            title=_title(run, info),
             created_at=run.created_at,
             completed_at=run.completed_at,
         )
+
+
+def _title(run: DraftRun, info: MeetingInfo) -> str:
+    """Display name: entered details, else the drafted title, else the agenda filename."""
+    entered = ": ".join(p for p in (info.organisation, info.body_name) if p)
+    if entered:
+        return entered
+    drafted = ((run.draft or {}).get("header") or {}).get("title")
+    if drafted:
+        return drafted
+    agenda = next((d.filename for d in run.documents if d.role == "agenda"), None)
+    if agenda:
+        return Path(agenda).stem.replace("_", " ")
+    return "Untitled meeting"
 
 
 class DraftRunOut(DraftRunSummary):
