@@ -3,6 +3,7 @@
 	import favicon from '#lib/assets/favicon.svg';
 	import Icon from '#lib/components/Icon.svelte';
 	import Sidebar from '#lib/components/Sidebar.svelte';
+	import { ui } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -14,7 +15,7 @@
 	<title>DESS Minutes</title>
 </svelte:head>
 
-<div class="shell">
+<div class="shell" class:collapsed={ui.sidebarCollapsed}>
 	<header class="mobile-bar">
 		<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
 			<Icon name="menu" size={18} />
@@ -23,7 +24,11 @@
 	</header>
 
 	<aside class="side" class:open={menuOpen}>
-		<Sidebar onnavigate={() => (menuOpen = false)} />
+		<Sidebar
+			onnavigate={() => (menuOpen = false)}
+			collapsed={ui.sidebarCollapsed && !menuOpen}
+			ontoggle={menuOpen ? undefined : ui.toggleSidebar}
+		/>
 	</aside>
 	{#if menuOpen}
 		<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
@@ -36,10 +41,20 @@
 
 <style>
 	.shell {
+		--side-w: 264px;
 		display: grid;
-		grid-template-columns: 264px minmax(0, 1fr);
+		grid-template-columns: var(--side-w) minmax(0, 1fr);
 		min-height: 100vh;
-		background: linear-gradient(to right, var(--sidebar) 263px, var(--border) 263px 264px, var(--bg) 264px);
+		background: linear-gradient(
+			to right,
+			var(--sidebar) calc(var(--side-w) - 1px),
+			var(--border) calc(var(--side-w) - 1px) var(--side-w),
+			var(--bg) var(--side-w)
+		);
+	}
+
+	.shell.collapsed {
+		--side-w: 64px;
 	}
 
 	.side {
@@ -61,7 +76,8 @@
 	}
 
 	@media (max-width: 860px) {
-		.shell {
+		.shell,
+		.shell.collapsed {
 			grid-template-columns: 1fr;
 			background: var(--bg);
 		}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 
 	let {
@@ -6,13 +7,15 @@
 		message,
 		seconds = null,
 		icon = 'layers',
-		note = 'A short meeting takes under a minute; a long board meeting can take a few. You can leave this page and come back.'
+		note = 'A short meeting takes under a minute; a long board meeting can take a few. You can leave this page and come back.',
+		children
 	}: {
 		title: string;
 		message: string;
 		seconds?: number | null;
 		icon?: IconName;
 		note?: string;
+		children?: Snippet;
 	} = $props();
 
 	const clock = $derived(
@@ -25,7 +28,8 @@
 	<h2>{title}</h2>
 	<p class="muted">{message}</p>
 	{#if clock}<p class="clock">{clock}</p>{/if}
-	<p class="tiny muted">{note}</p>
+	{#if note}<p class="tiny muted">{note}</p>{/if}
+	{#if children}<div class="extra">{@render children()}</div>{/if}
 </div>
 
 <style>
@@ -62,6 +66,10 @@
 		50% {
 			box-shadow: 0 0 0 10px rgba(45, 79, 214, 0.08);
 		}
+	}
+
+	.extra {
+		margin-top: 0.5rem;
 	}
 
 	.clock {

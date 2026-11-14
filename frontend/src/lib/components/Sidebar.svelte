@@ -13,7 +13,11 @@
 	} from '#lib/api.ts';
 	import Icon from '#lib/components/Icon.svelte';
 
-	let { onnavigate }: { onnavigate?: () => void } = $props();
+	let {
+		onnavigate,
+		collapsed = false,
+		ontoggle
+	}: { onnavigate?: () => void; collapsed?: boolean; ontoggle?: () => void } = $props();
 
 	let runs = $state<DraftRunSummary[]>([]);
 	let loaded = $state(false);
@@ -54,16 +58,49 @@
 	afterNavigate(() => onnavigate?.());
 </script>
 
-<div class="sidebar">
-	<a class="brand" href="/">
-		<span class="logo" aria-hidden="true">D</span>
-		<span>DESS Minutes</span>
+<div class="sidebar" class:collapsed>
+	<div class="top">
+		<a class="brand" href="/" title="DESS Minutes">
+			<span class="logo" aria-hidden="true">D</span>
+			{#if !collapsed}<span>DESS Minutes</span>{/if}
+		</a>
+		{#if ontoggle}
+			<button
+				class="btn ghost sm toggle"
+				onclick={ontoggle}
+				aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+				title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+			>
+				<Icon name="panelLeft" size={16} />
+			</button>
+		{/if}
+	</div>
+
+	<a class="btn primary new" href="/drafts/new" title="New minutes">
+		<Icon name="plus" />
+		{#if !collapsed}New minutes{/if}
 	</a>
 
-	<a class="btn primary new" href="/drafts/new">
-		<Icon name="plus" />
-		New minutes
-	</a>
+	{#if collapsed}
+		<nav class="mini" aria-label="Meetings">
+			{#each runs.slice(0, 12) as run (run.id)}
+				<a
+					class="mini-item"
+					class:active={run.id === activeId}
+					href="/drafts/{run.id}"
+					title="{run.title} ({STATUS_LABELS[run.status]})"
+				>
+					<span class="initial">{run.title.charAt(0)}</span>
+					<span class="dot {run.status}"></span>
+				</a>
+			{/each}
+		</nav>
+		<div class="foot">
+			<a href="/profiles" class:active={page.url.pathname.startsWith('/profiles')} title="Minutes profiles">
+				<Icon name="book" />
+			</a>
+		</div>
+	{:else}
 
 	<div class="section">
 		<div class="section-head">
@@ -112,6 +149,7 @@
 			Minutes profiles
 		</a>
 	</div>
+	{/if}
 </div>
 
 <style>
@@ -121,6 +159,87 @@
 		height: 100%;
 		padding: 1rem 0.75rem;
 		gap: 1rem;
+	}
+
+	.top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.25rem;
+	}
+
+	.toggle {
+		color: var(--faint);
+	}
+
+	.collapsed {
+		padding: 1rem 0.5rem;
+		align-items: center;
+	}
+
+	.collapsed .top {
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.collapsed .brand {
+		padding: 0;
+	}
+
+	.collapsed .new {
+		width: 2.4rem;
+		height: 2.4rem;
+		padding: 0;
+	}
+
+	.mini {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.35rem;
+		overflow-y: auto;
+	}
+
+	.mini-item {
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: 2.2rem;
+		height: 2.2rem;
+		border-radius: var(--radius-sm);
+		color: var(--text-2);
+		font-size: 0.82rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.mini-item:hover {
+		background: rgba(17, 24, 39, 0.05);
+		text-decoration: none;
+	}
+
+	.mini-item.active {
+		background: var(--surface);
+		box-shadow:
+			var(--shadow-sm),
+			inset 0 0 0 1px var(--border);
+	}
+
+	.mini-item .dot {
+		position: absolute;
+		right: 3px;
+		bottom: 3px;
+	}
+
+	.collapsed .foot {
+		width: 100%;
+		display: flex;
+		justify-content: center;
+	}
+
+	.collapsed .foot a {
+		padding: 0.5rem;
 	}
 
 	.brand {

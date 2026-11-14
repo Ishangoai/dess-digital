@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { goto, invalidate } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		ASSOCIATION_INFO,
 		ASSOCIATIONS,
@@ -56,6 +57,13 @@
 		editing = null;
 	});
 
+	let attentionOpen = $state(false);
+	let attentionBox = $state<HTMLDetailsElement>();
+
+	function showAttention() {
+		attentionOpen = true;
+		attentionBox?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
 	let busy = $state(false);
 	let elapsed = $state(0);
 	let error = $state('');
@@ -72,8 +80,18 @@
 	const sourceIds = $derived([...new Set(run.documents.map((d) => d.source_id))]);
 	const sourceNames = $derived(new Map(run.documents.map((d) => [d.source_id, d.role])));
 	const unassigned = $derived(rows.filter((r) => !r.item_ref || !headings.has(r.item_ref)));
-	const attention = $derived(unassigned.length + review.uncovered.length);
-	const uncertainties = $derived(run.analysis?.uncertainties ?? []);
+	// Uncertainties and source limitations from the analysis, shown with the items needing attention.
+	const notes = $derived([
+		...(run.analysis?.uncertainties ?? []).map((u) => ({
+			ref: u.item_ref ? `Item ${u.item_ref}` : 'Meeting',
+			text: u.description,
+			extra: u.competing_readings.length ? `Possible readings: ${u.competing_readings.join(' / ')}` : ''
+		})),
+		...(run.analysis?.sources ?? [])
+			.filter((src) => src.limitations.length)
+			.map((src) => ({ ref: src.source_id, text: src.limitations.join('; '), extra: '' }))
+	]);
+	const attention = $derived(unassigned.length + review.uncovered.length + notes.length);
 
 	function rowsFor(ref: string) {
 		return rows.filter((r) => r.item_ref === ref);
@@ -138,18 +156,26 @@
 		error = '';
 		elapsed = 0;
 		const timer = window.setInterval(() => elapsed++, 1000);
-		draftsChanged();
+		const id = run.id;
+		// Pick up the drafting status once the request has started, so the header, sidebar and
+		// AI activity page follow the stages live.
+		const started = window.setTimeout(() => {
+			invalidate('app:run');
+			draftsChanged();
+		}, 800);
 		try {
 			// A failed drafting run keeps its confirmed mapping; only send edits while reviewing.
-			await api.generate(run.id, editable && dirty ? editedMapping() : null);
+			await api.generate(id, editable && dirty ? editedMapping() : null);
 			await invalidate('app:run');
 			draftsChanged();
-			await goto(`/drafts/${run.id}/minutes`);
+			// Only move on if the user is still looking at this meeting's mapping.
+			if (page.url.pathname === `/drafts/${id}/mapping`) await goto(`/drafts/${id}/minutes`);
 		} catch (e) {
 			error = errorText(e);
 			await invalidate('app:run');
 			draftsChanged();
 		} finally {
+			window.clearTimeout(started);
 			window.clearInterval(timer);
 			busy = false;
 		}
@@ -247,76 +273,52 @@
 	/>
 {:else}
 	<div class="layout">
-		<section class="intro">
-			<div class="stack tight">
-				<h2>Check the mapping</h2>
-				<p class="muted">
-					Each passage of the discussion has been filed under an agenda item. Move anything that sits in
-					the wrong place; the minutes are written from this mapping.
-				</p>
-			</div>
-			<div class="stats">
-				<div><strong>{groups.length}</strong><span>agenda items</span></div>
-				<div><strong>{rows.length}</strong><span>passages</span></div>
-				<div class:warn={attention > 0}>
-					<strong>{attention}</strong><span>{attention === 1 ? 'needs' : 'need'} attention</span>
-				</div>
-			</div>
-		</section>
-
-		{#if run.mapping_edited && !editable}
-			<p class="alert info small">This mapping was edited before drafting.</p>
-		{/if}
-
-		{#if uncertainties.length || run.analysis?.sources.length}
-			<details class="card notice">
-				<summary>
-					<Icon name="alert" size={16} />
-					<span>
-						<strong>Notes from the analysis</strong>
-						<span class="muted small">
-							{uncertainties.length ? plural(uncertainties.length, 'uncertainty') + ', ' : ''}{plural(
-								run.analysis?.sources.length ?? 0,
-								'source'
-							)} described
-						</span>
-					</span>
-					<Icon name="chevronDown" size={16} />
-				</summary>
-				<div class="notice-body">
-					{#each uncertainties as u (u.uncertainty_id)}
-						<div class="unc">
-							<span class="ref">{u.item_ref ? `Item ${u.item_ref}` : 'Meeting'}</span>
-							<div>
-								<p>{u.description}</p>
-								{#if u.competing_readings.length}
-									<p class="tiny muted">Possible readings: {u.competing_readings.join(' / ')}</p>
-								{/if}
-							</div>
-						</div>
-					{/each}
-					{#each run.analysis?.sources ?? [] as s (s.source_id)}
-						<div class="unc">
-							<span class="ref">{s.source_id}</span>
-							<div>
-								<p class="small">{s.description}</p>
-								{#if s.limitations.length}
-									<p class="tiny muted">Limitations: {s.limitations.join('; ')}</p>
-								{/if}
-							</div>
-						</div>
-					{/each}
-				</div>
-			</details>
-		{/if}
+		<div class="lead">
+			<p class="small">
+				{#if editable}
+					Move anything in the wrong place; the minutes are written from this mapping.
+				{:else}
+					The minutes were written from this mapping, so it is now locked. Correct the draft in the Word
+					document, or <a href="/drafts/new">start new minutes</a> with the same files to map it again.
+				{/if}
+				{#if run.mapping_edited && !editable}<strong>It was edited before drafting.</strong>{/if}
+			</p>
+			<span class="counts">
+				{#if attention}
+					<button class="attn-pill" onclick={showAttention} title="Show what needs attention">
+						<Icon name="alert" size={13} />
+						<strong>{attention}</strong> need{attention === 1 ? 's' : ''} attention
+					</button>
+				{/if}
+				<span><strong>{rows.length}</strong> {rows.length === 1 ? 'passage' : 'passages'}</span>
+				<span><strong>{groups.length}</strong> agenda {groups.length === 1 ? 'item' : 'items'}</span>
+			</span>
+		</div>
 
 		{#if attention}
-			<section class="group attention">
-				<header class="g-head">
+			<details class="group attention" bind:open={attentionOpen} bind:this={attentionBox}>
+				<summary class="g-head">
 					<span class="g-ref warn"><Icon name="alert" size={14} /></span>
 					<h3>Needs attention</h3>
-					<span class="tiny muted">Not filed under any agenda item</span>
-				</header>
+					<span class="tiny muted">Unsure, unmapped or flagged by the analysis</span>
+					<span class="spacer"></span>
+					<Icon name="chevronDown" size={16} />
+				</summary>
+				{#if notes.length}
+					<ul class="passages">
+						{#each notes as n, i (i)}
+							<li class="passage">
+								<div class="p-main">
+									<span class="ref">{n.ref}</span>
+									<div class="p-body">
+										<p>{n.text}</p>
+										{#if n.extra}<span class="tiny muted">{n.extra}</span>{/if}
+									</div>
+								</div>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if unassigned.length}
 					<ul class="passages">
 						{#each unassigned as row (row.segment_id)}{@render passage(row)}{/each}
@@ -332,7 +334,11 @@
 									<div class="p-body">
 										<p class="small">{review.uncovered_excerpts[i]}</p>
 										<span class="tiny muted">
-											{filed ? 'Filed. Save your edits to keep it.' : 'Not mapped. Check nothing material is missing.'}
+											{filed
+												? 'Filed. It is saved when you draft the minutes.'
+												: editable
+													? 'Not filed under any agenda item. File it under one if it belongs in the minutes.'
+													: 'Not filed under any agenda item.'}
 										</span>
 									</div>
 									{#if editable && !filed}
@@ -352,7 +358,7 @@
 						{/each}
 					</ul>
 				{/if}
-			</section>
+			</details>
 		{:else}
 			<p class="all-good small"><Icon name="check" size={14} /> Every line of the transcript and notes is mapped.</p>
 		{/if}
@@ -399,7 +405,6 @@
 					<Icon name="arrowRight" />
 				</button>
 			{:else if run.draft}
-				<span class="small muted">The mapping is locked once the minutes are drafted.</span>
 				<span class="spacer"></span>
 				<a class="btn primary" href="/drafts/{run.id}/minutes">View the minutes <Icon name="arrowRight" /></a>
 			{/if}
@@ -414,90 +419,83 @@
 		gap: 1rem;
 	}
 
-	.intro {
+	.lead {
 		display: flex;
+		align-items: center;
 		justify-content: space-between;
-		align-items: flex-end;
-		gap: 1.5rem;
+		gap: 0.5rem 1.5rem;
 		flex-wrap: wrap;
 	}
 
-	.intro p {
-		max-width: 62ch;
-	}
-
-	.stats {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.stats div {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		min-width: 92px;
-		padding: 0.5rem 0.8rem;
-		border: 1px solid var(--border);
-		border-radius: var(--radius-sm);
-		background: var(--surface);
-	}
-
-	.stats strong {
-		font-size: 1.15rem;
-		line-height: 1.2;
-	}
-
-	.stats span {
-		font-size: 0.72rem;
+	.lead p {
 		color: var(--muted);
 	}
 
-	.stats .warn {
-		border-color: #f3d39b;
-		background: var(--warn-bg);
+	.lead p {
+		max-width: 72ch;
 	}
 
-	.stats .warn strong,
-	.stats .warn span {
-		color: var(--warn-fg);
-	}
-
-	.notice {
-		padding: 0;
-	}
-
-	.notice summary {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		padding: 0.8rem 1rem;
+	.lead p strong {
 		color: var(--text-2);
+		font-weight: 500;
 	}
 
-	.notice summary > span {
-		flex: 1;
+	.counts {
 		display: flex;
-		gap: 0.5rem;
-		align-items: baseline;
-		flex-wrap: wrap;
+		gap: 0.4rem;
 	}
 
-	.notice[open] summary :global(svg:last-child) {
+	.attn-pill {
+		font: inherit;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.78rem;
+		padding: 0.2rem 0.6rem;
+		border: 1px solid #f3d39b;
+		border-radius: 999px;
+		background: var(--warn-bg);
+		color: var(--warn-fg);
+		cursor: pointer;
+	}
+
+	.attn-pill:hover {
+		border-color: var(--warn);
+	}
+
+	.attn-pill strong {
+		font-weight: 600;
+	}
+
+	.counts span {
+		font-size: 0.78rem;
+		color: var(--muted);
+		padding: 0.2rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--surface);
+	}
+
+	.counts strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.attention > summary {
+		cursor: pointer;
+	}
+
+	.attention:not([open]) > summary {
+		border-bottom: none;
+	}
+
+	.attention > summary :global(svg:last-child) {
+		color: var(--warn);
+		transition: transform 0.15s;
+	}
+
+	.attention[open] > summary :global(svg:last-child) {
 		transform: rotate(180deg);
-	}
-
-	.notice-body {
-		display: flex;
-		flex-direction: column;
-		gap: 0.7rem;
-		padding: 0 1rem 1rem 2.6rem;
-	}
-
-	.unc {
-		display: flex;
-		gap: 0.75rem;
-		align-items: flex-start;
-		font-size: 0.88rem;
 	}
 
 	.all-good {

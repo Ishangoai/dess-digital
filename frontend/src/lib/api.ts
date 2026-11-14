@@ -120,6 +120,7 @@ export interface Finding {
 }
 
 export interface LLMCall {
+	id: string;
 	stage: string;
 	provider: string;
 	model: string;
@@ -128,6 +129,15 @@ export interface LLMCall {
 	latency_ms: number;
 	ok: boolean;
 	error: string | null;
+	created_at: string;
+}
+
+/** One call in full; null text means it was not stored (calls made before it was recorded). */
+export interface LLMCallDetail extends LLMCall {
+	system_prompt: string | null;
+	prompt: string | null;
+	output: string | null;
+	raw_output: string | null;
 }
 
 export interface DraftRunSummary {
@@ -286,6 +296,8 @@ export const api = {
 		json<DraftRun>(f(`/api/drafts/${id}?debug=true`)),
 	createDraft: (form: FormData) =>
 		json<DraftRun>(fetch('/api/drafts', { method: 'POST', body: form })),
+	getCalls: (id: string, f: Fetch = fetch) =>
+		json<LLMCallDetail[]>(f(`/api/drafts/${id}/calls`)),
 	getMapping: (id: string, f: Fetch = fetch) =>
 		json<MappingReview>(f(`/api/drafts/${id}/mapping`)),
 	retryAnalysis: (id: string) => json<DraftRun>(post(`/api/drafts/${id}/analyse`)),
@@ -383,4 +395,31 @@ export function plural(n: number, word: string): string {
 export const DRAFTS_CHANGED = 'drafts:changed';
 export function draftsChanged(): void {
 	window.dispatchEvent(new Event(DRAFTS_CHANGED));
+}
+
+export const STAGE_INFO: Record<string, { label: string; about: string }> = {
+	evidence: {
+		label: 'Read the evidence',
+		about: 'Maps the transcript and notes to the agenda items and records uncertainties.'
+	},
+	policy: {
+		label: 'Select content',
+		about: 'Applies the Minuting Policy (MP1 to MP9): what belongs in the record and what needs clarifying.'
+	},
+	style: {
+		label: 'Write the minutes',
+		about: 'Applies the Writing Style (WS1 to WS6) to write the draft and the questions.'
+	},
+	validation: {
+		label: 'Check the draft',
+		about: 'Independently checks the draft and questions against the evidence and the profile.'
+	},
+	reconsideration: {
+		label: 'Reconsider',
+		about: "Considers the check's findings once and revises the draft where they are supported."
+	}
+};
+
+export function compact(n: number): string {
+	return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }

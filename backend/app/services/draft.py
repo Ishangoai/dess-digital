@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import Connection, CursorResult, Engine, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -74,8 +74,13 @@ def create_run(
     meeting_info: MeetingInfo,
     profile_slug: str,
     profile_version: int | None = None,
+    analyse: bool = True,
 ) -> DraftRun:
-    """Store the evidence and run stage 1 (evidence analysis and mapping)."""
+    """Store the evidence and run stage 1 (evidence analysis and mapping).
+
+    With analyse=False the run is stored as analysing and returned at once; call
+    analyse_in_background to run stage 1.
+    """
     roles = [u.role for u in uploads]
     if SourceRole.AGENDA not in roles:
         raise InvalidInputError("an agenda is required")
@@ -115,7 +120,30 @@ def create_run(
     db.add(run)
     db.commit()
 
-    return _analyse(db, llm, run)
+    return _analyse(db, llm, run) if analyse else run
+
+
+def analyse_in_background(
+    bind: Engine | Connection, run_id: uuid.UUID, llm: LLMClient, then_draft: bool = False
+) -> None:
+    """Stage 1 for a stored run, after the upload response (FastAPI BackgroundTasks).
+
+    Uses its own session: the request's session is closed by the time this runs.
+    """
+    with Session(bind) as db:
+        run = db.get(DraftRun, run_id)
+        if run is None:
+            return
+        try:
+            run = _analyse(db, llm, run)
+            if then_draft and run.status == DraftStatus.AWAITING_MAPPING_REVIEW:
+                generate(db, llm, run)
+        except Exception as e:  # never leave the run stuck as analysing
+            db.rollback()
+            run.status = DraftStatus.FAILED
+            run.error = str(e)
+            run.error_stage = PipelineStage.EVIDENCE
+            db.commit()
 
 
 def retry_analysis(db: Session, llm: LLMClient, run: DraftRun) -> DraftRun:
@@ -298,6 +326,9 @@ def _record_call(db: Session, run: DraftRun, result: StageResult[Any]) -> None:
             input_tokens=result.usage.input_tokens,
             output_tokens=result.usage.output_tokens,
             latency_ms=round(result.latency_ms),
+            system_prompt=result.system or None,
+            prompt=result.message or None,
+            output=result.output.model_dump_json(),
         )
     )
 
@@ -311,6 +342,8 @@ def _record_failure(db: Session, run: DraftRun, llm: LLMClient, e: StageError) -
             ok=False,
             error=str(e.cause),
             raw_output=e.raw_text[:RAW_OUTPUT_LIMIT] if e.raw_text else None,
+            system_prompt=e.system or None,
+            prompt=e.message or None,
         )
     )
     run.status = DraftStatus.FAILED

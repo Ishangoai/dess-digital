@@ -26,6 +26,7 @@ class DocumentOut(BaseModel):
 
 
 class LLMCallOut(BaseModel):
+    id: uuid.UUID
     stage: str
     provider: str
     model: str
@@ -34,6 +35,16 @@ class LLMCallOut(BaseModel):
     latency_ms: int
     ok: bool
     error: str | None
+    created_at: datetime
+
+
+class LLMCallDetail(LLMCallOut):
+    """One call in full: instructions, message and response."""
+
+    system_prompt: str | None
+    prompt: str | None
+    output: str | None
+    raw_output: str | None
 
 
 class UsageTotal(BaseModel):

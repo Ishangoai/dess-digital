@@ -10,6 +10,14 @@
 
 	let active = $state<string | null>(null);
 	let templateInput: HTMLInputElement;
+	let menu = $state<HTMLDetailsElement>();
+
+	function closeMenu(event: Event) {
+		if (!menu?.open) return;
+		if (event instanceof KeyboardEvent ? event.key === 'Escape' : !menu.contains(event.target as Node)) {
+			menu.open = false;
+		}
+	}
 	let exporting = $state(false);
 	let exportError = $state('');
 
@@ -18,8 +26,6 @@
 		new Map((run.reconsideration?.decisions ?? []).map((d) => [d.finding_id, d]))
 	);
 	const headings = $derived(new Map(draft.items.map((i) => [i.item_ref, i.heading])));
-	const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-	const tokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 	function where(q: (typeof draft.questions)[number]): string {
 		if (q.anchor_kind === 'meeting_heading') return 'Meeting details';
@@ -54,48 +60,38 @@
 	}
 </script>
 
-<div class="toolbar">
-	<div class="stack tight">
-		<h2>Draft minutes</h2>
-		<p class="small muted">
-			{draft.questions.length
-				? `${plural(draft.questions.length, 'question')} for you to answer. They go into Word as comments.`
-				: 'No questions for you. The draft is ready to review in Word.'}
-		</p>
-	</div>
-	<span class="spacer"></span>
-	<a class="btn ghost" href="/drafts/{run.id}/mapping"><Icon name="map" /> Mapping</a>
-	<details class="menu">
-		<summary class="btn">
-			{#if exporting}<span class="spinner"></span>{/if}
-			Use a template <Icon name="chevronDown" size={14} />
-		</summary>
-		<div class="menu-body">
-			<p class="small">
-				Build the minutes into your own Word template. It needs a paragraph containing
-				<code>{'{{MINUTES}}'}</code>.
-			</p>
-			<button class="btn sm" onclick={() => templateInput.click()} disabled={exporting}>
-				<Icon name="upload" size={14} /> Choose template (.docx)
-			</button>
-			<input
-				bind:this={templateInput}
-				type="file"
-				accept=".docx"
-				hidden
-				onchange={(e) => downloadWithTemplate(e.currentTarget.files?.[0])}
-			/>
-		</div>
-	</details>
-	<a class="btn primary" href={api.documentUrl(run.id)} download>
-		<Icon name="download" /> Download Word
-	</a>
-</div>
+<svelte:window onclick={closeMenu} onkeydown={closeMenu} />
 
 {#if exportError}<p class="alert error small">{exportError}</p>{/if}
 
 <div class="layout">
 	<div class="paper">
+		<div class="doc-actions">
+			<a class="btn sm" href={api.documentUrl(run.id)} download title="Download as a Word document">
+				<Icon name="download" size={14} /> Word
+			</a>
+			<details class="menu" bind:this={menu}>
+				<summary class="btn sm" aria-label="More download options" title="More download options">
+					{#if exporting}<span class="spinner"></span>{:else}<Icon name="chevronDown" size={14} />{/if}
+				</summary>
+				<div class="menu-body">
+					<p class="small">
+						Export into your own Word template. Put a paragraph containing
+						<code>{'{{MINUTES}}'}</code> where the minutes should go.
+					</p>
+					<button class="btn sm" onclick={() => templateInput.click()} disabled={exporting}>
+						<Icon name="upload" size={14} /> Choose template (.docx)
+					</button>
+					<input
+						bind:this={templateInput}
+						type="file"
+						accept=".docx"
+						hidden
+						onchange={(e) => downloadWithTemplate(e.currentTarget.files?.[0])}
+					/>
+				</div>
+			</details>
+		</div>
 		<DraftDocument {draft} {active} onselect={(id) => select(id)} />
 	</div>
 
@@ -104,7 +100,7 @@
 			<header class="panel-head">
 				<Icon name="message" size={15} />
 				<h3>Questions</h3>
-				<span class="count">{draft.questions.length}</span>
+				<span class="count">{draft.questions.length ? 'Added to Word as comments' : '0'}</span>
 			</header>
 			{#if draft.questions.length}
 				<ol class="questions">
@@ -164,39 +160,16 @@
 			</div>
 		</details>
 
-		<details class="panel">
-			<summary class="panel-head">
-				<Icon name="layers" size={15} />
-				<h3>Model usage</h3>
-				<span class="count">{tokens(run.usage_total.total_tokens)} tokens · {seconds(run.usage_total.latency_ms)}</span>
-				<Icon name="chevronDown" size={14} />
-			</summary>
-			<div class="panel-body">
-				<table class="usage">
-					<thead><tr><th>Stage</th><th>In</th><th>Out</th><th>Time</th></tr></thead>
-					<tbody>
-						{#each run.llm_calls as c, i (i)}
-							<tr class:bad={!c.ok} title={c.error ?? c.model}>
-								<td>{c.stage}</td>
-								<td>{tokens(c.input_tokens)}</td>
-								<td>{tokens(c.output_tokens)}</td>
-								<td>{seconds(c.latency_ms)}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-				<p class="tiny muted">{run.llm_calls[0]?.model ?? ''}</p>
-			</div>
-		</details>
 	</aside>
 </div>
 
 <style>
-	.toolbar {
+	.doc-actions {
+		position: absolute;
+		top: 0.9rem;
+		right: 0.9rem;
 		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		flex-wrap: wrap;
+		gap: 0.3rem;
 	}
 
 	.menu {
@@ -212,7 +185,7 @@
 		right: 0;
 		top: calc(100% + 6px);
 		z-index: 20;
-		width: 280px;
+		width: 290px;
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
@@ -237,9 +210,7 @@
 		border-radius: 6px;
 		box-shadow: var(--shadow);
 		padding: 3rem 3.5rem;
-		max-width: 800px;
-		width: 100%;
-		justify-self: center;
+		position: relative;
 	}
 
 	.rail {
@@ -250,6 +221,7 @@
 		gap: 0.75rem;
 		max-height: calc(100vh - 2.5rem);
 		overflow-y: auto;
+		scrollbar-width: thin;
 	}
 
 	.panel {
@@ -388,19 +360,6 @@
 	ul {
 		margin: 0;
 		padding-left: 1.1rem;
-	}
-
-	.usage {
-		font-size: 0.8rem;
-	}
-
-	.usage th,
-	.usage td {
-		padding: 0.35rem 0.4rem;
-	}
-
-	.usage tr.bad td {
-		color: var(--err-fg);
 	}
 
 	@media (max-width: 1080px) {

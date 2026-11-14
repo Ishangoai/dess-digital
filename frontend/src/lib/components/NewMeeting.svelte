@@ -5,29 +5,27 @@
 	import { api, draftsChanged, errorText, type ProfileSummary } from '#lib/api.ts';
 	import FileDrop from '#lib/components/FileDrop.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import Working from '#lib/components/Working.svelte';
 
 	let agenda = $state<File[]>([]);
 	let transcript = $state<File[]>([]);
 	let notes = $state<File[]>([]);
 	let papers = $state<File[]>([]);
 	let showMore = $state(false);
-	let showOptions = $state(false);
+	let showDetails = $state(false);
 
 	let organisation = $state('');
 	let bodyName = $state('');
 	let meetingDate = $state('');
-	let meetingType = $state('');
 	let profileSlug = $state('dess-standard');
-	let autoConfirm = $state(false);
 
 	let profiles = $state<ProfileSummary[]>([]);
 	let error = $state('');
 	let busy = $state(false);
-	let elapsed = $state(0);
 
 	const ready = $derived(agenda.length > 0 && transcript.length > 0);
 	const extras = $derived(notes.length + papers.length);
+	const usable = $derived(profiles.filter((p) => p.active_version !== null));
+	const details = $derived([organisation, bodyName, meetingDate].filter((v) => v.trim()).length);
 	const profileName = $derived(profiles.find((p) => p.slug === profileSlug)?.name ?? profileSlug);
 
 	onMount(async () => {
@@ -54,15 +52,13 @@
 			organisation,
 			body_name: bodyName,
 			meeting_date: meetingDate,
-			meeting_type: meetingType,
 			profile_slug: profileSlug
 		};
 		for (const [key, value] of Object.entries(fields)) if (value.trim()) form.append(key, value.trim());
-		form.append('auto_confirm_mapping', String(autoConfirm));
+		// Return as soon as the files are stored; the meeting page follows the analysis live.
+		form.append('background', 'true');
 
 		busy = true;
-		elapsed = 0;
-		const timer = window.setInterval(() => elapsed++, 1000);
 		try {
 			const run = await api.createDraft(form);
 			draftsChanged();
@@ -70,25 +66,12 @@
 		} catch (e) {
 			error = errorText(e);
 		} finally {
-			window.clearInterval(timer);
 			busy = false;
 		}
 	}
 </script>
 
 <div class="page">
-	{#if busy}
-		<div class="working-wrap">
-			<Working
-				title={autoConfirm ? 'Analysing and drafting' : 'Reading the meeting'}
-				message={autoConfirm
-					? 'Mapping the discussion to the agenda, then writing and checking the minutes.'
-					: 'Working out which parts of the discussion belong to each agenda item.'}
-				seconds={elapsed}
-				note="A short meeting takes under a minute; a long board meeting can take a few. Keep this tab open."
-			/>
-		</div>
-	{:else}
 		<header class="head">
 			<h1>New minutes</h1>
 			<p class="muted">
@@ -109,77 +92,60 @@
 						<FileDrop label="Meeting notes" compact bind:files={notes} />
 						<FileDrop label="Supporting papers" compact multiple bind:files={papers} />
 					</div>
-				{:else}
-					<button type="button" class="link-btn" onclick={() => (showMore = true)}>
-						<Icon name="plus" size={14} />
-						Add meeting notes or papers
-					</button>
 				{/if}
-				{#if !showMore && extras}<span class="tiny muted">{extras} added</span>{/if}
-			</div>
-
-			<div class="divider"></div>
-
-			<div class="details">
-				<label class="field">
-					<span>Organisation <span class="opt">optional</span></span>
-					<input type="text" bind:value={organisation} placeholder="e.g. VeriFocal plc" />
-				</label>
-				<label class="field">
-					<span>Board or committee <span class="opt">optional</span></span>
-					<input type="text" bind:value={bodyName} placeholder="e.g. Board of Directors" />
-				</label>
-				<label class="field">
-					<span>Meeting date <span class="opt">optional</span></span>
-					<input type="text" bind:value={meetingDate} placeholder="e.g. 5 November 2026" />
-				</label>
-			</div>
-
-			<details class="options" bind:open={showOptions}>
-				<summary class="link-btn muted-link">
-					<Icon name={showOptions ? 'chevronDown' : 'chevronRight'} size={14} />
-					More options
-				</summary>
-				<div class="options-body">
-					<label class="field">
-						Minutes profile
-						{#if profiles.length}
-							<select bind:value={profileSlug}>
-								{#each profiles as p (p.slug)}
-									<option value={p.slug} disabled={p.active_version === null}>
-										{p.name}{p.active_version ? ` (v${p.active_version})` : ' (no confirmed version)'}
-									</option>
-								{/each}
-							</select>
-						{:else}
-							<input type="text" bind:value={profileSlug} />
+				{#if showDetails}
+					<div class="details" transition:slide={{ duration: 160 }}>
+						<label class="field">
+							Organisation
+							<input type="text" bind:value={organisation} placeholder="e.g. VeriFocal plc" />
+						</label>
+						<label class="field">
+							Board or committee
+							<input type="text" bind:value={bodyName} placeholder="e.g. Board of Directors" />
+						</label>
+						<label class="field">
+							Meeting date
+							<input type="text" bind:value={meetingDate} placeholder="e.g. 5 November 2026" />
+						</label>
+						{#if usable.length > 1}
+							<label class="field profile">
+								Minutes profile
+								<select bind:value={profileSlug}>
+									{#each usable as p (p.slug)}
+										<option value={p.slug}>{p.name} (v{p.active_version})</option>
+									{/each}
+								</select>
+							</label>
 						{/if}
-					</label>
-					<label class="field">
-						<span>Meeting type <span class="opt">optional</span></span>
-						<input type="text" bind:value={meetingType} placeholder="e.g. board" />
-					</label>
-					<label class="check">
-						<input type="checkbox" bind:checked={autoConfirm} />
-						<span>
-							Skip the mapping check
-							<span class="tiny muted">Draft straight away, without reviewing the mapping first.</span>
-						</span>
-					</label>
+					</div>
+				{/if}
+				<div class="adders">
+					{#if !showMore}
+						<button type="button" class="link-btn" onclick={() => (showMore = true)}>
+							<Icon name="plus" size={14} />
+							Add meeting notes or papers
+						</button>
+					{/if}
+					{#if !showDetails}
+						<button type="button" class="link-btn" onclick={() => (showDetails = true)}>
+							<Icon name="plus" size={14} />
+							Add meeting details
+						</button>
+					{/if}
+					{#if !showMore && extras}<span class="tiny muted">{extras} files added</span>{/if}
+					{#if !showDetails && details}<span class="tiny muted">{details} details added</span>{/if}
 				</div>
-			</details>
+			</div>
 
 			{#if error}<p class="alert error">{error}</p>{/if}
 
 			<div class="actions">
 				<span class="tiny muted">.docx, .txt, .md or .vtt</span>
-				<button class="btn primary lg" type="submit" disabled={!ready}>
-					{autoConfirm ? 'Analyse and draft' : 'Analyse meeting'}
-					<Icon name="arrowRight" />
+				<button class="btn primary lg" type="submit" disabled={!ready || busy}>
+					{#if busy}<span class="spinner"></span> Uploading{:else}Analyse meeting <Icon name="arrowRight" />{/if}
 				</button>
 			</div>
 		</form>
-	{/if}
 </div>
 
 <style>
@@ -210,63 +176,39 @@
 
 	.drops {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		/* minmax(0, 1fr) lets columns shrink below long filenames, which then truncate. */
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		gap: 1rem;
 	}
 
 	.more {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.4rem;
+		gap: 0.9rem;
+	}
+
+	.adders {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem 1.5rem;
 	}
 
 	.extra {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 		gap: 0.75rem;
-		width: 100%;
-	}
-
-	.divider {
-		height: 1px;
-		background: var(--border);
-		margin: 0.25rem 0;
 	}
 
 	.details {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.9rem;
 	}
 
-	.muted-link {
-		color: var(--muted);
-	}
-
-	.options-body {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.9rem;
-		margin-top: 0.9rem;
-	}
-
-	.check {
+	.details .profile {
 		grid-column: 1 / -1;
-		display: flex;
-		align-items: flex-start;
-		gap: 0.6rem;
-		font-size: 0.86rem;
-		color: var(--text-2);
-	}
-
-	.check input {
-		margin-top: 0.2rem;
-	}
-
-	.check span {
-		display: flex;
-		flex-direction: column;
+		max-width: 360px;
 	}
 
 	.actions {
@@ -277,15 +219,10 @@
 		padding-top: 0.25rem;
 	}
 
-	.working-wrap {
-		margin-top: 2rem;
-	}
-
 	@media (max-width: 640px) {
 		.drops,
 		.extra,
-		.details,
-		.options-body {
+		.details {
 			grid-template-columns: 1fr;
 		}
 	}
