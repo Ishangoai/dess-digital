@@ -72,6 +72,7 @@ jobs:
           DATA_DIR=/mnt/disks/data
           SITE_ADDRESS=${{ vars.SITE_ADDRESS }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          MINUTES_ROUTES=${{ vars.MINUTES_ROUTES || 'false' }}
           LLM_PROVIDER=${{ vars.LLM_PROVIDER }}
           LLM_MODEL=${{ vars.LLM_MODEL }}
           LLM_API_KEY=${{ secrets.LLM_API_KEY }}
