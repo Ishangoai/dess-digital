@@ -71,6 +71,8 @@ jobs:
           IMAGE_TAG=${{ github.sha }}
           DATA_DIR=/mnt/disks/data
           SITE_ADDRESS=${{ vars.SITE_ADDRESS }}
+          BASIC_AUTH_USER=${{ vars.BASIC_AUTH_USER }}
+          BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           MINUTES_ROUTES=${{ vars.MINUTES_ROUTES || 'false' }}
           LLM_PROVIDER=${{ vars.LLM_PROVIDER }}
