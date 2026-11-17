@@ -37,11 +37,65 @@ def _decode(data: bytes) -> str:
         return data.decode("cp1252", errors="replace")
 
 
-def _docx_text(data: bytes) -> str:
+def docx_to_markdown(data: bytes, heading_offset: int = 0) -> str:
+    """Whole .docx as markdown, in document order: headings, lists and tables kept."""
+    document = _open_docx(data)
+    numbering = _ListNumbering(document)
+    blocks: list[tuple[bool, str]] = []  # (is list item, markdown)
+    for block in document.element.body.iterchildren():
+        tag = block.tag.rsplit("}", 1)[-1]
+        if tag == "p":
+            paragraph = Paragraph(block, document)
+            text = paragraph.text.strip()
+            if not text:
+                continue
+            hashes = _heading_level(paragraph, heading_offset)
+            label = numbering.label(paragraph)
+            if hashes:
+                blocks.append((False, f"{'#' * hashes} {label}{text}"))
+            else:
+                blocks.append((bool(label), f"{label}{text}"))
+        elif tag == "tbl":
+            blocks.append((False, _markdown_table(Table(block, document))))
+    out = ""
+    for i, (is_item, text) in enumerate(blocks):
+        if i:
+            # List items stay together; everything else is its own paragraph.
+            out += "\n" if is_item and blocks[i - 1][0] else "\n\n"
+        out += text
+    return out + "\n"
+
+
+def _heading_level(paragraph: Paragraph, offset: int) -> int:
+    """Number of # for a Title or Heading N paragraph, 0 for body text."""
+    name = paragraph.style.name if paragraph.style is not None else ""
+    if name == "Title":
+        return min(1 + offset, 6)
+    if name.startswith("Heading ") and name[8:].isdigit():
+        return min(int(name[8:]) + 1 + offset, 6)
+    return 0
+
+
+def _markdown_table(table: Table) -> str:
+    rows = [[" ".join(c.text.split()).replace("|", "\\|") for c in r.cells] for r in table.rows]
+    if not rows:
+        return ""
+    width = max(len(r) for r in rows)
+    rows = [r + [""] * (width - len(r)) for r in rows]
+    lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * width]
+    lines += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return "\n".join(lines)
+
+
+def _open_docx(data: bytes) -> Document:
     try:
-        document = docx.Document(io.BytesIO(data))
+        return docx.Document(io.BytesIO(data))
     except Exception as e:  # python-docx raises several unrelated types for bad files
         raise UnsupportedFileError(f"not a readable .docx file: {e}") from e
+
+
+def _docx_text(data: bytes) -> str:
+    document = _open_docx(data)
     numbering = _ListNumbering(document)
     lines: list[str] = []
     for block in document.element.body.iterchildren():

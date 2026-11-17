@@ -485,6 +485,19 @@
     },
     "operational_instructions": {
       "$ref": "#/$defs/OperationalInstructions"
+    },
+    "logic": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Full minuting logic in markdown. When set, prompts send it instead of the core instructions and the per-stage guidance.",
+      "title": "Logic"
     }
   },
   "required": [

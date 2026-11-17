@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.db import SessionLocal
-from app.minutes.profile_content import load_profile_file
+from app.minutes.profile_content import load_profile_file, with_logic
 from app.services.profile import seed_profile
 
 
@@ -21,10 +21,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--confirm", action="store_true", help="mark the version confirmed")
     parser.add_argument("--by", default="seed", help="recorded as created_by / confirmed_by")
+    parser.add_argument("--logic", type=Path, help="logic.md to send instead of the core text")
     args = parser.parse_args(argv)
 
     try:
-        content = load_profile_file(args.path)
+        content = with_logic(load_profile_file(args.path), args.logic)
     except (OSError, ValueError, ValidationError) as e:
         print(f"invalid profile file {args.path}: {e}")
         return 1

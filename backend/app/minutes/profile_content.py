@@ -156,6 +156,11 @@ class ProfileContent(_Strict):
     writing_style: list[Dimension]
     presentation: PresentationSettings = Field(default_factory=PresentationSettings)
     operational_instructions: OperationalInstructions
+    logic: str | None = Field(
+        default=None,
+        description="Full minuting logic in markdown. When set, prompts send it instead of the "
+        "core instructions and the per-stage guidance.",
+    )
 
     @field_validator("minuting_policy")
     @classmethod
@@ -193,6 +198,13 @@ def content_hash(content: ProfileContent) -> str:
     """sha256 of the content, used to skip re-seeding identical profiles."""
     canonical = json.dumps(content.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def with_logic(content: ProfileContent, logic_path: Path | None) -> ProfileContent:
+    """Copy of the profile with logic.md attached (unchanged if no path is given)."""
+    if logic_path is None:
+        return content
+    return content.model_copy(update={"logic": logic_path.read_text(encoding="utf-8")})
 
 
 def load_profile_file(path: Path) -> ProfileContent:

@@ -14,7 +14,7 @@ from app.llm import get_llm_client
 from app.minutes.evidence import EvidenceBundle, MeetingInfo, SourceRole, SourceText
 from app.minutes.extract import extract_text
 from app.minutes.pipeline import Pipeline, StageError, StageResult
-from app.minutes.profile_content import load_profile_file
+from app.minutes.profile_content import load_profile_file, with_logic
 from app.minutes.prompts import PromptContext
 
 
@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--out", type=Path, required=True, help="folder for the JSON outputs")
     parser.add_argument("--max-tokens", type=int, default=65536)
+    parser.add_argument("--logic", type=Path, help="logic.md to send instead of the core text")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if not args.transcript and not args.notes:
@@ -40,7 +41,8 @@ def main(argv: list[str] | None = None) -> int:
             for role, p, sid in files
         ]
     )
-    ctx = PromptContext(load_profile_file(args.profile), bundle, MeetingInfo())
+    profile = with_logic(load_profile_file(args.profile), args.logic)
+    ctx = PromptContext(profile, bundle, MeetingInfo())
     pipeline = Pipeline(get_llm_client(), ctx, max_tokens=args.max_tokens)
     args.out.mkdir(parents=True, exist_ok=True)
 

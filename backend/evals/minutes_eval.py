@@ -18,7 +18,7 @@ from app.minutes.docx_export import render_minutes_docx
 from app.minutes.evidence import EvidenceBundle, MeetingInfo, SourceRole, SourceText
 from app.minutes.extract import extract_text
 from app.minutes.pipeline import Pipeline, StageError
-from app.minutes.profile_content import ProfileContent, load_profile_file
+from app.minutes.profile_content import ProfileContent, load_profile_file, with_logic
 from app.minutes.prompts import PromptContext
 from evals.checks import Assertion, check
 
@@ -88,10 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--repeat", type=int, default=1, help="runs per case (outputs vary)")
+    parser.add_argument("--logic", type=Path, help="logic.md to send instead of the core text")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
-    profile = load_profile_file(args.profile)
+    profile = with_logic(load_profile_file(args.profile), args.logic)
     rows: list[dict] = []
     for path in args.cases:
         case = load_case(path)

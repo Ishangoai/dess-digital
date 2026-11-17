@@ -10,6 +10,7 @@ from app.minutes.profile_content import (
     content_hash,
     export_json_schema,
     render_profile,
+    with_logic,
 )
 
 
@@ -86,3 +87,16 @@ def test_render_profile_includes_floors_and_dimensions(profile_content: ProfileC
     assert "### MP4 Outcomes" in text
     assert "[evidential_fundamental; dess_standard] Never infer approval" in text
     assert "### WS6 Presentation" in text
+
+
+def test_logic_is_optional(profile_content: ProfileContent, tmp_path) -> None:
+    assert profile_content.logic is None
+    logic = tmp_path / "logic.md"
+    logic.write_text("# Minuting logic\n\nApply every standard.", encoding="utf-8")
+
+    content = with_logic(profile_content, logic)
+
+    assert content.logic == "# Minuting logic\n\nApply every standard."
+    assert ProfileContent.model_validate(as_dict(content)).logic == content.logic
+    assert content_hash(content) != content_hash(profile_content)
+    assert with_logic(profile_content, None) is profile_content
