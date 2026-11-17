@@ -84,6 +84,11 @@ class ProfileContent(_Strict):
     logic: str = Field(
         min_length=1, description="The full minuting logic in markdown, sent on every LLM call."
     )
+    lessons: str | None = Field(
+        default=None,
+        description="House lessons learned from this organisation's feedback (markdown list), "
+        "confirmed by a person. Sent after the logic.",
+    )
     presentation: PresentationSettings = Field(default_factory=PresentationSettings)
 
     @model_validator(mode="before")

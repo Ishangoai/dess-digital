@@ -61,7 +61,17 @@ uv run uvicorn app.main:app --reload                  # API on :8000
 uv run --group ui python -m dev_ui                    # Gradio dev UI on :7860
 ```
 
-The flow is: upload agenda + transcript and/or notes, review the mapping of evidence to agenda items, generate, then download the Word draft (clarification questions are Word comments).
+The flow is: upload agenda + transcript and/or notes, review the mapping of evidence to agenda items, generate, then download the Word draft (clarification questions are Word comments). Selecting content, writing and reconsidering run once per agenda item, in parallel (`MINUTES_PARALLEL_CALLS`, default 4), which keeps cheaper models from writing thin summaries.
+
+### Review and learning
+
+On the minutes page a reviewer can approve the draft, request a revision (with a reason), or edit the Word file and upload the final copy. The upload is matched back to the draft by the run id and bookmarks in the exported file and compared item by item. Every piece of feedback earns a reward from 0 to 1 (approve 1, revise 0, edited copy = share of the draft kept); **Draft scores** ranks each profile version and model by it.
+
+Learning is per organisation: create an organisation profile (Minutes profiles page) based on the DESS Standard and draft that organisation's meetings with it. Its reviewers' final copies are shown to later drafts as house examples, and **Propose lessons from feedback** turns their edits, comments and revision reasons into a proposed profile version with house lessons. Nothing changes until a person confirms it. Before confirming, check the candidate against past finals:
+
+```bash
+uv run python -m evals.replay --profile <org-slug> --version <n> --limit 3 --out ../reference/replay
+```
 
 Without the API or database:
 
@@ -77,6 +87,15 @@ Runs cases through the real model (costs tokens) and checks the minutes apply ju
 ```bash
 uv run python -m evals.minutes_eval evals/cases/*.yaml ../reference/evals/cases/*.yaml \
   --out ../reference/evals/out --repeat 2
+```
+
+### Comparing minutes
+
+An LLM judge scores minutes of one meeting item by item against the profile (outcome, substance, challenge, actions, accuracy, style) and, with `--reference`, compares each with a gold copy in both orders. Minutes can be `.docx`, `.md` or a pipeline `draft.json`. Use a strong judge model.
+
+```bash
+uv run python -m evals.compare --agenda agenda.docx --transcript transcript.docx \
+  --reference gold.docx --judge-model gemini-3.6-flash --out ../reference/compare out/*/draft.json
 ```
 
 ## Checks

@@ -40,6 +40,20 @@
 		}
 	}
 
+	async function learn() {
+		busy = true;
+		error = message = '';
+		try {
+			const v = await api.proposeLessons(profile.slug);
+			message = `Created version ${v.version_number} (proposed) with updated lessons. Check them, then mark reviewed and confirm.`;
+			await goto(`/profiles/${profile.slug}?v=${v.version_number}`, { invalidateAll: true });
+		} catch (e) {
+			error = errorText(e);
+		} finally {
+			busy = false;
+		}
+	}
+
 	async function upload(event: SubmitEvent) {
 		event.preventDefault();
 		if (!file?.[0]) return (error = 'Choose a profile file.');
@@ -115,6 +129,16 @@
 			</table>
 		</div>
 
+		{#if profile.based_on_slug}
+			<div class="learn">
+				<button class="btn" onclick={learn} disabled={busy}>Propose lessons from feedback</button>
+				<span class="small muted">
+					Reads reviewers' edits, comments and revision reasons since the last lessons and proposes
+					a new version. Nothing changes until a person confirms it.
+				</span>
+			</div>
+		{/if}
+
 		<details>
 			<summary>Upload a new version</summary>
 			<form class="stack upload" onsubmit={upload}>
@@ -136,6 +160,16 @@
 		<section class="card stack">
 			<h2>{c.name} v{version.version_number} ({version.status})</h2>
 			{#if c.description}<p>{c.description}</p>{/if}
+			{#if c.lessons}
+				<h3>House lessons</h3>
+				<p class="small muted">
+					Learned from this organisation's feedback and sent after the logic. The DESS standards win
+					if they conflict.
+				</p>
+				<pre class="logic lessons">{c.lessons}</pre>
+			{:else if profile.based_on_slug}
+				<p class="small muted">No house lessons yet.</p>
+			{/if}
 			<p class="small muted">
 				The minuting logic sent to the model on every call ({c.logic.split(/\s+/).length.toLocaleString()} words).
 			</p>
@@ -189,6 +223,17 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		padding: 0.9rem 1rem;
+	}
+
+	.learn {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+	}
+
+	.lessons {
+		max-height: 40vh;
 	}
 
 	.btn.small {

@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
+from pydantic import BaseModel
 from sqlalchemy import Connection, CursorResult, Engine, select, update
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from app.minutes.pipeline import Pipeline, PipelineStage, StageError, StageResul
 from app.minutes.prompts import PromptContext
 from app.models.draft import DraftDocument, DraftRun, DraftStatus, LLMCall
 from app.models.profile import MinutesProfileVersion, utcnow
+from app.services import learning
 from app.services import profile as profile_svc
 
 RAW_OUTPUT_LIMIT = 20_000
@@ -156,7 +158,7 @@ def retry_analysis(db: Session, llm: LLMClient, run: DraftRun) -> DraftRun:
 
 def _analyse(db: Session, llm: LLMClient, run: DraftRun) -> DraftRun:
     try:
-        result = _pipeline(run, llm).analyse_evidence()
+        result = _pipeline(db, run, llm).analyse_evidence()
     except StageError as e:
         _record_failure(db, run, llm, e)
         return run
@@ -249,7 +251,7 @@ def generate(
         raise InvalidStateError(f"cannot generate a draft from status {run.status}{hint}")
 
     assert run.mapping is not None and run.analysis is not None
-    pipeline = _pipeline(run, llm)
+    pipeline = _pipeline(db, run, llm)
     stage_columns = {
         PipelineStage.POLICY: "selection",
         PipelineStage.STYLE: "draft_initial",
@@ -257,16 +259,20 @@ def generate(
         PipelineStage.RECONSIDERATION: "reconsideration",
     }
 
-    def on_stage(result: StageResult[Any]) -> None:
-        setattr(run, stage_columns[result.stage], result.output.model_dump(mode="json"))
+    def on_call(result: StageResult[Any]) -> None:
         _record_call(db, run, result)
+        db.commit()
+
+    def on_output(stage: PipelineStage, output: BaseModel) -> None:
+        setattr(run, stage_columns[stage], output.model_dump(mode="json"))
         db.commit()
 
     try:
         result = pipeline.run_drafting(
             EvidenceMap.model_validate(run.mapping),
             EvidenceAnalysis.model_validate(run.analysis),
-            on_stage=on_stage,
+            on_call=on_call,
+            on_output=on_output,
         )
     except StageError as e:
         _record_failure(db, run, llm, e)
@@ -286,7 +292,9 @@ def render_document(run: DraftRun, template: bytes | None = None) -> bytes:
         raise InvalidStateError(f"no draft yet (status {run.status})")
     presentation = profile_svc.version_content(run.profile_version).presentation
     try:
-        return render_minutes_docx(DraftMinutes.model_validate(run.draft), presentation, template)
+        return render_minutes_docx(
+            DraftMinutes.model_validate(run.draft), presentation, template, run_id=str(run.id)
+        )
     except UnsupportedFileError:
         raise
     except Exception as e:  # python-docx raises several unrelated types for bad templates
@@ -308,19 +316,22 @@ def _claim(db: Session, run: DraftRun, allowed: list[DraftStatus], new: DraftSta
     return result.rowcount == 1
 
 
-def _pipeline(run: DraftRun, llm: LLMClient) -> Pipeline:
+def _pipeline(db: Session, run: DraftRun, llm: LLMClient) -> Pipeline:
     ctx = PromptContext(
         profile=profile_svc.version_content(run.profile_version),
         bundle=bundle_for(run),
         meeting_info=MeetingInfo.model_validate(run.meeting_info or {}),
+        examples=learning.house_examples(db, run.profile_version.profile),
     )
-    return Pipeline(llm, ctx, max_tokens=settings.minutes_max_output_tokens)
+    return Pipeline(
+        llm, ctx, settings.minutes_max_output_tokens, workers=settings.minutes_parallel_calls
+    )
 
 
 def _record_call(db: Session, run: DraftRun, result: StageResult[Any]) -> None:
     run.llm_calls.append(
         LLMCall(
-            stage=result.stage,
+            stage=result.label,
             provider=result.provider,
             model=result.model,
             input_tokens=result.usage.input_tokens,
@@ -336,7 +347,7 @@ def _record_call(db: Session, run: DraftRun, result: StageResult[Any]) -> None:
 def _record_failure(db: Session, run: DraftRun, llm: LLMClient, e: StageError) -> None:
     run.llm_calls.append(
         LLMCall(
-            stage=e.stage,
+            stage=e.label,
             provider=llm.provider.name,
             model=llm.model,
             ok=False,

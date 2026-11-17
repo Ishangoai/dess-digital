@@ -224,6 +224,8 @@ export interface ProfileContent {
 	description: string | null;
 	/** The full minuting logic in markdown, sent to the model on every call. */
 	logic: string;
+	/** House lessons learned from this organisation's feedback, sent after the logic. */
+	lessons?: string | null;
 	/** Word layout settings; the API fills in defaults. */
 	presentation?: Record<string, unknown>;
 }
@@ -231,6 +233,60 @@ export interface ProfileContent {
 export interface ProfileVersion extends VersionSummary {
 	profile_slug: string;
 	content: ProfileContent;
+}
+
+export type Verdict = 'approved' | 'revision_requested' | 'edited';
+
+export type ChangeStatus = 'unchanged' | 'edited' | 'rewritten' | 'deleted' | 'added';
+
+/** How one item of the uploaded final differs from the draft. */
+export interface ItemChange {
+	item_ref: string;
+	heading: string;
+	status: ChangeStatus;
+	similarity: number;
+	words_added: number;
+	words_removed: number;
+	draft_text: string;
+	final_text: string;
+}
+
+export interface Comparison {
+	run_id: string | null;
+	items: ItemChange[];
+	comments: { author: string; text: string }[];
+	/** Share of the draft the reviewer kept, word-weighted, 0 to 1. */
+	similarity: number;
+}
+
+/** One piece of feedback: a vote, or an edited Word copy compared with the draft. */
+export interface Feedback {
+	id: string;
+	run_id: string;
+	verdict: Verdict;
+	/** 1 approved, 0 revision requested, the similarity for an edited copy. */
+	reward: number;
+	reason: string | null;
+	filename: string | null;
+	comparison: Comparison | null;
+	model: string;
+	created_by: string | null;
+	created_at: string;
+}
+
+/** Feedback for one setup (profile version and model). */
+export interface Score {
+	profile_slug: string;
+	profile_version: number;
+	model: string;
+	approvals: number;
+	revisions: number;
+	edits: number;
+	votes: number;
+	net: number;
+	approval_rate: number;
+	mean_similarity: number | null;
+	expected: number;
 }
 
 export class ApiError extends Error {
@@ -310,7 +366,29 @@ export const api = {
 		return response.blob();
 	},
 
+	getFeedback: (id: string, f: Fetch = fetch) =>
+		json<Feedback[]>(f(`/api/drafts/${id}/feedback`)),
+	addFeedback: (id: string, verdict: Verdict, reason = '') =>
+		json<Feedback>(
+			post(`/api/drafts/${id}/feedback`, { verdict, reason: reason || null, by: 'web-ui' })
+		),
+	uploadFinal: (id: string, file: File) => {
+		const form = new FormData();
+		form.append('file', file);
+		form.append('by', 'web-ui');
+		return json<Feedback>(fetch(`/api/drafts/${id}/final`, { method: 'POST', body: form }));
+	},
+	getScores: (f: Fetch = fetch) => json<Score[]>(f('/api/feedback/scores')),
+
 	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),
+	createProfile: (body: {
+		slug: string;
+		name: string;
+		body_name: string | null;
+		based_on_slug: string;
+	}) => json<ProfileSummary>(post('/api/profiles', body)),
+	proposeLessons: (slug: string) =>
+		json<ProfileVersion>(post(`/api/profiles/${slug}/learn?by=web-ui`)),
 	getProfile: (slug: string, f: Fetch = fetch) =>
 		json<ProfileDetail>(f(`/api/profiles/${slug}`)),
 	getVersion: (slug: string, n: number, f: Fetch = fetch) =>
@@ -416,6 +494,14 @@ export const STAGE_INFO: Record<string, { label: string; about: string }> = {
 		about: "Considers the check's findings once and revises the draft where they are supported."
 	}
 };
+
+/** 'policy:4' -> 'Select content · item 4'; per-item calls carry their item after a colon. */
+export function stageLabel(stage: string): string {
+	const [base, item] = stage.split(':');
+	const label = STAGE_INFO[base]?.label ?? base;
+	if (!item) return label;
+	return item === 'header' ? `${label} · header` : `${label} · item ${item}`;
+}
 
 export function compact(n: number): string {
 	return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);

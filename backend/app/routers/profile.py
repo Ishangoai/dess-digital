@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.llm import LLMClient
 from app.minutes.profile_content import export_json_schema
 from app.models.profile import MinutesProfile, VersionOrigin
+from app.routers.draft import llm_client
 from app.schemas.profile import (
     ProfileCreate,
     ProfileDetail,
@@ -16,6 +18,7 @@ from app.schemas.profile import (
     ProfileVersionOut,
     StatusChange,
 )
+from app.services import learning
 from app.services import profile as svc
 
 router = APIRouter(prefix="/profiles", tags=["Minutes profiles"])
@@ -101,5 +104,17 @@ def change_version_status(slug: str, number: int, body: StatusChange, db: DB) ->
     except svc.VersionNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
     except svc.InvalidTransitionError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return ProfileVersionOut.of(version)
+
+
+@router.post("/{slug}/learn", status_code=status.HTTP_201_CREATED)
+def propose_lessons(
+    slug: str, db: DB, llm: Annotated[LLMClient, Depends(llm_client)], by: str | None = None
+) -> ProfileVersionOut:
+    """Propose a new version whose house lessons are updated from reviewers' feedback."""
+    try:
+        version = learning.propose_lessons(db, llm, _profile(db, slug), by)
+    except learning.LearningError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return ProfileVersionOut.of(version)

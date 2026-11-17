@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     # Exposes /api/profiles and /api/drafts. Keep off on public deployments: no auth yet.
     minutes_routes: bool = False
     minutes_default_profile: str = "dess-standard"
-    minutes_max_output_tokens: int = 65536  # per pipeline stage
+    minutes_max_output_tokens: int = 65536  # per LLM call
+    minutes_parallel_calls: int = 4  # per-item calls run at once
     minutes_max_input_chars: int = 1_500_000
     minutes_max_upload_bytes: int = 20_000_000
 

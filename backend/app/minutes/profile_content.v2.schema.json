@@ -203,6 +203,19 @@
       "title": "Logic",
       "type": "string"
     },
+    "lessons": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "House lessons learned from this organisation's feedback (markdown list), confirmed by a person. Sent after the logic.",
+      "title": "Lessons"
+    },
     "presentation": {
       "$ref": "#/$defs/PresentationSettings"
     }

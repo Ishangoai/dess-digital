@@ -2,11 +2,14 @@
 
 import io
 import logging
+import re
 from datetime import date
 from typing import Any
 
 import docx
 from docx.document import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
@@ -30,14 +33,23 @@ from app.minutes.profile_content import (
 log = logging.getLogger("app.minutes")
 
 MARKER = "{{MINUTES}}"
+# Let an edited copy be matched back to its draft and items (see roundtrip.py).
+RUN_PREFIX = "dess-run:"
+BOOKMARK_PREFIX = "dess_item_"
+BOOKMARK_ID_BASE = 90_000  # clear of any bookmarks a template already has
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def render_minutes_docx(
-    draft: DraftMinutes, presentation: PresentationSettings, template: bytes | None = None
+    draft: DraftMinutes,
+    presentation: PresentationSettings,
+    template: bytes | None = None,
+    run_id: str | None = None,
 ) -> bytes:
     writer = _Writer(presentation, template)
     writer.write(draft)
+    if run_id:
+        writer.doc.core_properties.identifier = f"{RUN_PREFIX}{run_id}"
     buffer = io.BytesIO()
     writer.doc.save(buffer)
     return buffer.getvalue()
@@ -91,6 +103,7 @@ class _Writer:
         number = self._item_number(index, item.item_ref)
         heading = self._para(f"{number} {item.heading}".strip(), self.p.styles.heading)
         self.heading_runs[item.item_ref] = heading.runs
+        _bookmark(heading, BOOKMARK_ID_BASE + index, bookmark_name(item.item_ref))
         for n, paragraph in enumerate(item.paragraphs, 1):
             prefix = (
                 f"{number}.{n} "
@@ -199,6 +212,24 @@ class _Writer:
         for child in list(body):
             if not child.tag.endswith("}sectPr"):  # keep page setup, headers and footers
                 body.remove(child)
+
+
+def bookmark_name(item_ref: str) -> str:
+    """Word bookmark names allow letters, digits and underscores, up to 40 characters."""
+    return BOOKMARK_PREFIX + re.sub(r"\W", "_", item_ref)[:30]
+
+
+def _bookmark(para: Paragraph, ident: int, name: str) -> None:
+    start, end = OxmlElement("w:bookmarkStart"), OxmlElement("w:bookmarkEnd")
+    start.set(qn("w:id"), str(ident))
+    start.set(qn("w:name"), name)
+    end.set(qn("w:id"), str(ident))
+    p = para._p
+    if p.pPr is not None:
+        p.pPr.addnext(start)
+    else:
+        p.insert(0, start)
+    p.append(end)
 
 
 def _style_names(doc: Document) -> set[str]:

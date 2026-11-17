@@ -103,6 +103,21 @@ class EvidenceBundle:
         text = "\n".join(source.lines[max(ref.start, 1) - 1 : ref.end]).strip()
         return text if len(text) <= max_chars else text[: max_chars - 3] + "..."
 
+    def lines_for(self, refs: Iterable[LineRef]) -> str:
+        """The referenced lines, numbered as in render(), with '...' between gaps."""
+        wanted = {(r.source_id, n) for r in refs for n in range(r.start, r.end + 1)}
+        out: list[str] = []
+        for s in self.sources:
+            prev = None
+            for n, line in enumerate(s.lines, 1):
+                if (s.source_id, n) not in wanted or not line.strip():
+                    continue
+                if prev is not None and not _only_blank_between(s.lines, prev, n):
+                    out.append("...")
+                out.append(f"{s.source_id}{n}| {line}")
+                prev = n
+        return "\n".join(out)
+
     def uncovered(
         self, refs: Iterable[LineRef], roles: Iterable[SourceRole] = (SourceRole.TRANSCRIPT,)
     ) -> list[LineRef]:

@@ -25,9 +25,12 @@ from app.minutes.docx_export import DOCX_MEDIA_TYPE
 from app.minutes.evidence import MeetingInfo, SourceRole
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import EvidenceMap
+from app.minutes.roundtrip import WrongDraftError
 from app.models.draft import DraftRun, DraftStatus
 from app.schemas.draft import DraftRunOut, DraftRunSummary, LLMCallDetail, MappingReview
+from app.schemas.feedback import FeedbackIn, FeedbackOut
 from app.services import draft as svc
+from app.services import feedback as feedback_svc
 
 router = APIRouter(prefix="/drafts", tags=["Draft minutes"])
 
@@ -226,3 +229,46 @@ async def download_document_with_template(
     if len(data) > settings.minutes_max_upload_bytes:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "template is too large")
     return _docx_response(_run(db, run_id), data)
+
+
+@router.post("/{run_id}/feedback", status_code=status.HTTP_201_CREATED)
+def add_feedback(run_id: uuid.UUID, body: FeedbackIn, db: DB) -> FeedbackOut:
+    """Approve the draft or request a revision (with a reason)."""
+    run = _run(db, run_id)
+    try:
+        vote = feedback_svc.add_feedback(db, run, body.verdict, body.reason, body.by)
+    except svc.InvalidStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except svc.InvalidInputError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    return FeedbackOut.model_validate(vote)
+
+
+@router.post("/{run_id}/final", status_code=status.HTTP_201_CREATED)
+async def upload_final(
+    run_id: uuid.UUID,
+    db: DB,
+    file: Annotated[UploadFile, File(description="The edited Word copy of this draft (.docx)")],
+    by: Annotated[str | None, Form(max_length=255)] = None,
+) -> FeedbackOut:
+    """Compare the reviewer's edited Word copy with the draft, item by item."""
+    run = _run(db, run_id)
+    data = await file.read(settings.minutes_max_upload_bytes + 1)
+    if len(data) > settings.minutes_max_upload_bytes:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file is too large")
+    try:
+        feedback = feedback_svc.add_final(db, run, file.filename or "final.docx", data, by)
+    except svc.InvalidStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except UnsupportedFileError as e:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
+    except WrongDraftError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    return FeedbackOut.model_validate(feedback)
+
+
+@router.get("/{run_id}/feedback")
+def list_feedback(run_id: uuid.UUID, db: DB) -> list[FeedbackOut]:
+    """All feedback on this draft, oldest first."""
+    votes = feedback_svc.votes_for(db, _run(db, run_id))
+    return [FeedbackOut.model_validate(v) for v in votes]

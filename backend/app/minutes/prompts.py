@@ -1,6 +1,6 @@
 """Prompt assembly. Every stage shares the same system prompt and evidence prefix."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
@@ -27,15 +27,27 @@ conversation, repetition and incidental operational detail. Keep the distinction
 proposal, discussion, noting, deferral and approval."""
 
 
+LESSONS_HEADING = """# House lessons for this organisation
+
+Learned from reviewers' corrections to earlier drafts of this organisation's minutes and \
+confirmed by a person. They refine house style and practice within the standards above; where \
+they conflict, the standards prevail."""
+
+
 @dataclass(frozen=True)
 class PromptContext:
     profile: ProfileContent
     bundle: EvidenceBundle
     meeting_info: MeetingInfo
+    # Final minute texts this organisation approved, by agenda purpose_kind.
+    examples: dict[str, list[str]] = field(default_factory=dict)
 
     def system(self) -> str:
-        """Same for every stage: our preamble, then the profile's full minuting logic."""
-        return f"{PREAMBLE}\n\n{self.profile.logic}"
+        """Same for every call: our preamble, the full minuting logic, then any house lessons."""
+        text = f"{PREAMBLE}\n\n{self.profile.logic}"
+        if self.profile.lessons:
+            text += f"\n\n{LESSONS_HEADING}\n\n{self.profile.lessons}"
+        return text
 
     def evidence(self) -> str:
         info = self.meeting_info.model_dump_json(exclude_none=True, indent=2)
@@ -48,6 +60,49 @@ class PromptContext:
             parts.append(f"<{tag}>\n{_text(value)}\n</{tag}>")
         parts.append(f"<task>\n{task.strip()}\n</task>")
         return "\n\n".join(parts)
+
+
+@dataclass(frozen=True)
+class Unit:
+    """One agenda item or additional business, drafted by its own calls."""
+
+    ref: str
+    heading: str
+    purpose_kind: str | None  # None for additional business
+    description: str
+
+    @property
+    def additional(self) -> bool:
+        return self.purpose_kind is None
+
+
+def units(mapping: EvidenceMap) -> list[Unit]:
+    out = []
+    for i in mapping.agenda_items:
+        purpose = f"{i.stated_purpose or 'not stated'} ({i.purpose_kind}, an expectation only)"
+        text = f"Item {i.ref}: {i.heading}\nPurpose on the agenda: {purpose}"
+        if i.linked_papers:
+            text += f"\nLinked papers: {', '.join(i.linked_papers)}"
+        out.append(Unit(i.ref, i.heading, i.purpose_kind, text))
+    for b in mapping.additional_business:
+        text = (
+            f"Additional business {b.key}: {b.heading}\nNot on the agenda. Minute it only if the "
+            "meeting transacted it; otherwise select nothing and say why in omitted_summary."
+        )
+        out.append(Unit(b.key, b.heading, None, text))
+    return out
+
+
+def item_context(ctx: PromptContext, mapping: EvidenceMap, unit: Unit) -> dict[str, str]:
+    """The item-specific blocks, after the shared ones so the shared prefix stays cacheable."""
+    refs = [s.source for s in mapping.segments if s.item_ref == unit.ref]
+    blocks = {
+        "this_item": unit.description,
+        "item_evidence": ctx.bundle.lines_for(refs) or "(no passages mapped to this item)",
+    }
+    if examples := ctx.examples.get(unit.purpose_kind or "", []):
+        blocks["house_examples"] = "\n\n---\n\n".join(examples)
+    return blocks
 
 
 def render_mapping(mapping: EvidenceMap) -> str:
@@ -98,44 +153,59 @@ conflicting sources.
 the proceedings, or the materials come from different meetings. Otherwise leave it empty.
 """
 
-TASK_POLICY = """
-Stage 2: apply the Minuting Policy (MP1-MP9) to decide what the minutes record and in what \
-depth, following Stage 2 (Apply Minuting Policy) of the Operational AI Logic.
+TASK_ITEM_POLICY = """
+Stage 2: apply the Minuting Policy (MP1-MP9) to the one item in <this_item>, following Stage 2 \
+(Apply Minuting Policy) of the Operational AI Logic. The other items are handled separately: use \
+the rest of the evidence only where it bears on this item.
 The confirmed evidence map was reviewed by the governance professional: where it differs from \
-your own reading, follow it.
-- For every agenda item, choose the treatment and select the outcomes, material points, actions \
-and delegations the record needs. Depth follows significance, not airtime.
-- Include additional business only if it was business the meeting transacted. Leave out \
-digressions and remarks with no governance value (note them in omitted_summary).
-- Use the outcome vocabulary exactly. Never infer approval from silence, a favourable \
-discussion, an agenda label or a paper's proposed resolution.
+your own reading, follow it. The passages mapped to this item are repeated in <item_evidence>.
+- Choose the treatment and select every outcome, material point, action and delegation the record \
+of this item needs. Depth follows significance, not airtime.
+- Keep figures, amounts, dates, names of options and conditions exactly as stated.
+- Select the reasoning and evidence the meeting relied on, alternatives considered, risks, the \
+challenge raised, the responses given and any concern left unresolved.
+- Use the outcome vocabulary exactly. Never infer approval from silence, a favourable discussion, \
+an agenda label or a paper's proposed resolution.
 - Keep limits, conditions and qualifications attached to the outcome they govern.
 - Actions: owner and due date only where agreed in the meeting; otherwise null.
-- Record what was left out in omitted_summary.
-- Add a clarification requirement only where the evidence leaves something material unresolved \
-and the answer would change the record. An issue the meeting itself left unresolved is a fact \
-to record, not a question.
+- Record what was left out, and why, in omitted_summary.
+- Add a clarification requirement only where the evidence leaves something material about this \
+item unresolved and the answer would change the record. An issue the meeting itself left \
+unresolved is a fact to record, not a question.
+Before answering, check: every outcome with its exact scope; figures and dates kept; reasons, \
+challenge and responses selected; a director who was absent would understand what was considered, \
+what was concluded and why.
 """
 
-TASK_STYLE = """
-Stage 3: write the minutes in the Writing Style (WS1-WS6), following Stage 3 (Apply Writing \
-Style) of the Operational AI Logic. Express only the substance in the selection. Do not add, \
-drop or strengthen substance.
-- Write full minutes, not a summary. For each significant item record the matter considered, \
-the principal reasoning, significant challenge or risk, and the outcome with its qualifications.
-- One minute item per selected item, in agenda order, using the agenda numbering. Place \
-additional business under the agenda's 'any other business' item if there is one, otherwise \
-after the last agenda item.
+TASK_ITEM_STYLE = """
+Stage 3: write the minute of the one item in <this_item> in the Writing Style (WS1-WS6), \
+following Stage 3 (Apply Writing Style) of the Operational AI Logic. Express only the substance \
+in <selection>. Do not add, drop or strengthen substance; use <item_evidence> to get wording, \
+figures and names right.
+- Write a full minute, not a summary: the matter considered, the principal reasoning and evidence \
+relied on, significant challenge, risks and responses, and the outcome with its qualifications. \
+Use as many paragraphs as the substance needs.
+- Use the item ref and heading from <this_item>. Paragraph ids are the item ref plus .p and a \
+number (4.p1, 4.p2 ...). Set outcome_type on paragraphs that record an outcome.
+- List actions in actions, each pointing at the paragraph that records it.
 - British spelling and conventions throughout (authorised, organisation, programme).
-- Paragraph ids are the item ref plus .p and a number (4.p1, 4.p2 ...). Set outcome_type on \
-paragraphs that record an outcome.
-- Header: only particulars the evidence supports; leave the rest null or empty.
 - Turn each clarification requirement into one neutral, answerable question. Anchor it to the \
 smallest affected passage: anchor_text must be a short phrase (usually a few words, never the \
-whole paragraph) copied exactly from that paragraph. Use item_heading or meeting_heading anchors \
-when no passage can be written.
-- Questions never appear in the minutes text. No blanks, placeholders or 'TBC' in the text.
-- If no clarification is needed, return no questions.
+whole paragraph) copied exactly from that paragraph. Use an item_heading anchor when no passage \
+can be written.
+- Questions never appear in the minute text. No blanks, placeholders or 'TBC' in the text.
+- <house_examples>, if present, are final minutes this organisation approved for similar items: \
+follow their structure and phrasing, never their facts.
+Before answering, check that every selected outcome, point, action and delegation appears, \
+figures and dates match the evidence, and nothing is stated more strongly than the evidence.
+"""
+
+TASK_HEADER = """
+Write the header of the minutes in the Writing Style: title (naming the body and organisation), \
+meeting date, time and place, those present (marking the chair), in attendance and apologies. Use \
+only the particulars in <particulars> and the evidence; leave the rest null or empty. Raise a \
+meeting_heading question only for a material particular the evidence leaves unresolved, with \
+requirement_ids from <clarifications> where one applies. Return no other questions.
 """
 
 TASK_VALIDATION = """
@@ -148,9 +218,16 @@ changed by rewording), consistency, and question quality.
 - Include the automated check results below where they are real problems.
 """
 
-TASK_RECONSIDER = """
-Reconsider the draft once in light of the validation findings. For each finding decide accept, \
-accept_in_part or retain, with a short reason. Return the revised minutes with accepted changes \
-applied. Keep unchanged paragraphs and their ids exactly as they were. Keep questions anchored \
-with anchor_text as an exact substring of the revised paragraph.
+TASK_ITEM_RECONSIDER = """
+Reconsider this item's minute once in light of the validation findings in <findings>. For each \
+finding decide accept, accept_in_part or retain, with a short reason. Return the revised item \
+with accepted changes applied. Keep unchanged paragraphs, their ids and the question ids exactly \
+as they were. Keep questions anchored with anchor_text as an exact substring of the revised \
+paragraph.
+"""
+
+TASK_HEADER_RECONSIDER = """
+Reconsider the header of the minutes once in light of the validation findings in <findings>. For \
+each finding decide accept, accept_in_part or retain, with a short reason. Return the revised \
+header with accepted changes applied, keeping question ids as they were.
 """

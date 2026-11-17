@@ -5,7 +5,7 @@
 		compact,
 		errorText,
 		isRunning,
-		STAGE_INFO,
+		stageLabel,
 		type DraftRun,
 		type LLMCallDetail
 	} from '#lib/api.ts';
@@ -108,7 +108,7 @@
 						<span class="n" class:ok={c.ok}>
 							<Icon name={c.ok ? 'check' : 'x'} size={11} />
 						</span>
-						<span class="label">{i + 1}. {STAGE_INFO[c.stage]?.label ?? c.stage}</span>
+						<span class="label">{i + 1}. {stageLabel(c.stage)}</span>
 						<span class="meta">{compact(c.input_tokens)} → {compact(c.output_tokens)} · {seconds(c.latency_ms)}</span>
 						<Icon name="chevronDown" size={14} />
 					</button>
