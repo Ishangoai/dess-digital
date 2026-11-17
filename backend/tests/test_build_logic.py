@@ -17,12 +17,12 @@ def write_docx(path: Path, title: str, heading: str, body: str) -> Path:
 def test_build_logic_joins_both_documents_verbatim(tmp_path: Path) -> None:
     standards = write_docx(tmp_path / "s.docx", "Standards", "MP1 Context", "Record the body.")
     logic = write_docx(tmp_path / "l.docx", "Operating logic", "Stage 1", "Read the agenda first.")
-    out = tmp_path / "out" / "logic.md"
+    out = tmp_path / "out" / "profile.md"
 
     assert main([str(standards), str(logic), "--out", str(out)]) == 0
 
     text = out.read_text(encoding="utf-8")
-    assert text.startswith("# Minuting logic")
+    assert text.startswith("# DESS Standard Minutes Profile")  # becomes the profile name
     assert text.index("# Part A: Professional Standards") < text.index("# Part B: Operational")
     assert "## Standards\n\n### MP1 Context\n\nRecord the body." in text
     assert "### Stage 1\n\nRead the agenda first." in text

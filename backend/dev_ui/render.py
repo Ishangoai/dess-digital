@@ -167,17 +167,5 @@ def usage_rows(run: dict[str, Any]) -> list[list[Any]]:
 
 def profile_markdown(version: dict[str, Any]) -> str:
     c = version["content"]
-    lines = [
-        f"# {c['name']} (v{version['version_number']}, {version['status']})",
-        c.get("description") or "",
-        "## Hard floors",
-        *[f"- {f}" for f in c["hard_floors"]],
-    ]
-    for section, key in (
-        ("Minuting Policy", "minuting_policy"),
-        ("Writing Style", "writing_style"),
-    ):
-        lines.append(f"## {section}")
-        for d in c[key]:
-            lines += [f"### {d['code']} {d['title']}", d["default_standard"]]
-    return "\n\n".join(lines)
+    title = f"**{c['name']}** (v{version['version_number']}, {version['status']})"
+    return f"{title}\n\n{c['logic']}"

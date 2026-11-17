@@ -1,11 +1,15 @@
+from pathlib import Path
+
 import pytest
+import yaml
 from sqlalchemy.orm import Session
 
-from app.minutes.profile_content import ProfileContent, ProvisionKind
+from app.minutes.profile_content import ProfileContent
 from app.models.profile import ProfileVersionStatus, VersionOrigin
 from app.services import profile as svc
 
 Status = ProfileVersionStatus
+FIXTURES = Path(__file__).parent / "fixtures" / "minutes"
 
 
 def edited(content: ProfileContent, **changes: object) -> ProfileContent:
@@ -92,47 +96,35 @@ def test_status_transitions(
             walk()
 
 
-def test_api_version_cannot_change_hard_floors(
+def test_api_version_with_new_logic_is_proposed(
     db: Session, profile_content: ProfileContent
 ) -> None:
     profile = svc.seed_profile(db, profile_content, slug="std", confirm_version=True).profile
-
-    with pytest.raises(svc.FloorViolationError, match="hard_floors"):
-        svc.create_version(
-            db,
-            profile,
-            edited(profile_content, hard_floors=["Anything goes."]),
-            origin=VersionOrigin.API,
-        )
-
-
-def test_api_version_cannot_drop_evidential_fundamental(
-    db: Session, profile_content: ProfileContent
-) -> None:
-    profile = svc.seed_profile(db, profile_content, slug="std", confirm_version=True).profile
-    data = profile_content.model_dump(mode="json")
-    data["minuting_policy"][3]["provisions"] = []  # drops mp4-no-silent-approval
-
-    with pytest.raises(svc.FloorViolationError) as exc:
-        svc.create_version(
-            db, profile, ProfileContent.model_validate(data), origin=VersionOrigin.API
-        )
-    assert exc.value.violations == ["evidential fundamental 'mp4-no-silent-approval' was removed"]
-
-
-def test_api_version_may_change_preferences(db: Session, profile_content: ProfileContent) -> None:
-    profile = svc.seed_profile(db, profile_content, slug="std", confirm_version=True).profile
-    data = profile_content.model_dump(mode="json")
-    data["writing_style"][3]["provisions"][0]["text"] = "Name action owners by full name."
-    child = ProfileContent.model_validate(data)
+    child = edited(profile_content, logic="# Test Standard Profile\n\nName owners by role.")
 
     version = svc.create_version(db, profile, child, origin=VersionOrigin.API)
 
     assert version.version_number == 2
     assert version.status == Status.PROPOSED
-    assert child.provisions_of_kind(ProvisionKind.PREFERENCE)["ws4-names-for-actions"].text == (
-        "Name action owners by full name."
-    )
+    assert svc.version_content(version).logic.endswith("Name owners by role.")
+
+
+def test_seeding_markdown_over_a_schema_1_version(
+    db: Session, profile_content: ProfileContent
+) -> None:
+    """The first deploy after the move to markdown: v1 is old structured content."""
+    old = yaml.safe_load((FIXTURES / "profile_v1.yaml").read_text(encoding="utf-8"))
+    profile = svc.seed_profile(db, profile_content, slug="std", confirm_version=True).profile
+    v1 = svc.latest_version(profile)
+    assert v1 is not None
+    v1.content, v1.content_sha256 = old, "sha-of-the-old-yaml"  # as stored before the change
+    db.commit()
+
+    result = svc.seed_profile(db, profile_content, slug="std", confirm_version=True)
+
+    assert result.created and result.version.version_number == 2
+    assert svc.active_version(result.profile) == result.version
+    assert "### MP4 Outcomes" in svc.version_content(v1).logic  # the old version still reads
 
 
 def test_duplicate_slug(db: Session) -> None:

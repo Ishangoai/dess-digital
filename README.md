@@ -39,10 +39,16 @@ cd backend && uv run alembic upgrade head
 
 Docker Compose runs migrations automatically (the `migrate` service). After changing a model, add a migration with `uv run alembic revision --autogenerate -m "..."` and review it.
 
-Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded from a local file. The DESS Standard text is client material, so it lives in the gitignored `reference/` folder and is never committed:
+Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are markdown. The DESS Standard profile is `backend/app/minutes/profiles/dess_standard.md`: the Professional Standards and Operational AI Logic documents, word for word, sent to the model on every call. The compose `migrate` service seeds it on every deploy (a new version only when the file changed). Locally:
 
 ```bash
-cd backend && uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
+cd backend && uv run python -m app.seed_profile --confirm
+```
+
+To rebuild it from new versions of the DESS Word documents:
+
+```bash
+uv run python -m app.minutes.build_logic STANDARDS.docx OPS_LOGIC.docx
 ```
 
 ### Drafting minutes
@@ -60,8 +66,8 @@ The flow is: upload agenda + transcript and/or notes, review the mapping of evid
 Without the API or database:
 
 ```bash
-uv run python -m app.minutes.cli --profile ../reference/profiles/dess_standard.yaml \
-  --agenda agenda.docx --transcript transcript.txt --out ../reference/out
+uv run python -m app.minutes.cli --agenda agenda.docx --transcript transcript.txt \
+  --out ../reference/out
 ```
 
 ### Evaluating judgement
@@ -70,7 +76,7 @@ Runs cases through the real model (costs tokens) and checks the minutes apply ju
 
 ```bash
 uv run python -m evals.minutes_eval evals/cases/*.yaml ../reference/evals/cases/*.yaml \
-  --profile ../reference/profiles/dess_standard.yaml --out ../reference/evals/out --repeat 2
+  --out ../reference/evals/out --repeat 2
 ```
 
 ## Checks

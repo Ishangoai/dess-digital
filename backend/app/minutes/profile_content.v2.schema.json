@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "ActionPresentation": {
+      "enum": [
+        "inline",
+        "inline_and_table"
+      ],
+      "title": "ActionPresentation",
+      "type": "string"
+    },
+    "AttendanceLayout": {
+      "enum": [
+        "paragraph",
+        "list"
+      ],
+      "title": "AttendanceLayout",
+      "type": "string"
+    },
+    "DateStyle": {
+      "enum": [
+        "long",
+        "ordinal",
+        "numeric"
+      ],
+      "title": "DateStyle",
+      "type": "string"
+    },
+    "NumberingScheme": {
+      "enum": [
+        "agenda",
+        "sequential",
+        "minute_reference"
+      ],
+      "title": "NumberingScheme",
+      "type": "string"
+    },
+    "ParagraphNumbering": {
+      "enum": [
+        "none",
+        "item_decimal"
+      ],
+      "title": "ParagraphNumbering",
+      "type": "string"
+    },
+    "PresentationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "date_style": {
+          "$ref": "#/$defs/DateStyle",
+          "default": "long"
+        },
+        "title_template": {
+          "default": "Minutes of a meeting of the {body} of {organisation}",
+          "title": "Title Template",
+          "type": "string"
+        },
+        "status_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "Draft",
+          "title": "Status Label"
+        },
+        "numbering": {
+          "$ref": "#/$defs/NumberingScheme",
+          "default": "agenda"
+        },
+        "minute_reference_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minute Reference Prefix"
+        },
+        "paragraph_numbering": {
+          "$ref": "#/$defs/ParagraphNumbering",
+          "default": "none"
+        },
+        "action_presentation": {
+          "$ref": "#/$defs/ActionPresentation",
+          "default": "inline"
+        },
+        "attendance_layout": {
+          "$ref": "#/$defs/AttendanceLayout",
+          "default": "list"
+        },
+        "styles": {
+          "$ref": "#/$defs/StyleMap"
+        },
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only used without a template.",
+          "title": "Font Family"
+        },
+        "font_size_pt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size Pt"
+        },
+        "comment_author": {
+          "default": "DESS Minutes",
+          "title": "Comment Author",
+          "type": "string"
+        },
+        "comment_initials": {
+          "default": "DM",
+          "title": "Comment Initials",
+          "type": "string"
+        }
+      },
+      "title": "PresentationSettings",
+      "type": "object"
+    },
+    "StyleMap": {
+      "additionalProperties": false,
+      "description": "Word style names used in the exported document.",
+      "properties": {
+        "title": {
+          "default": "Title",
+          "title": "Title",
+          "type": "string"
+        },
+        "heading": {
+          "default": "Heading 1",
+          "title": "Heading",
+          "type": "string"
+        },
+        "body": {
+          "default": "Normal",
+          "title": "Body",
+          "type": "string"
+        },
+        "table": {
+          "default": "Table Grid",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "title": "StyleMap",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 2,
+      "default": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
+    },
+    "jurisdiction": {
+      "const": "UK",
+      "default": "UK",
+      "title": "Jurisdiction",
+      "type": "string"
+    },
+    "logic": {
+      "description": "The full minuting logic in markdown, sent on every LLM call.",
+      "minLength": 1,
+      "title": "Logic",
+      "type": "string"
+    },
+    "presentation": {
+      "$ref": "#/$defs/PresentationSettings"
+    }
+  },
+  "required": [
+    "name",
+    "logic"
+  ],
+  "title": "MinutesProfileContent",
+  "type": "object"
+}

@@ -1,10 +1,9 @@
-"""Build logic.md: the DESS standards and operating logic, verbatim, as one markdown prompt.
+"""Build the DESS Standard profile: both DESS documents, verbatim, as one markdown file.
 
 Usage:
-    uv run python -m app.minutes.build_logic STANDARDS.docx OPS_LOGIC.docx \
-        --out ../reference/ref_2/logic.md
+    uv run python -m app.minutes.build_logic STANDARDS.docx OPS_LOGIC.docx
 
-The output is client text: keep it under the gitignored reference/ folder.
+Writes app/minutes/profiles/dess_standard.md, which every deploy seeds as the profile.
 """
 
 import argparse
@@ -12,8 +11,9 @@ import re
 from pathlib import Path
 
 from app.minutes.extract import docx_to_markdown, extract_text
+from app.minutes.profile_content import DEFAULT_PROFILE_PATH
 
-HEADER = """# Minuting logic
+HEADER = """# DESS Standard Minutes Profile
 
 This document holds the complete standards and operating logic for drafting the minutes. \
 Part A, the Professional Standards, sets what the minutes must achieve: nine Minuting Policy \
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("standards", type=Path, help="Professional Standards .docx")
     parser.add_argument("logic", type=Path, help="Operational AI Logic .docx")
-    parser.add_argument("--out", type=Path, required=True, help="where to write logic.md")
+    parser.add_argument("--out", type=Path, default=DEFAULT_PROFILE_PATH, help="output .md")
     args = parser.parse_args(argv)
 
     parts = [HEADER]

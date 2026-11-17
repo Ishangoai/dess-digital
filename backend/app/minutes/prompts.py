@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from app.minutes.evidence import EvidenceBundle, MeetingInfo
 from app.minutes.llm_schemas import EvidenceMap
-from app.minutes.profile_content import ProfileContent, render_profile
+from app.minutes.profile_content import ProfileContent
 
 PREAMBLE = """You prepare first-draft minutes of UK board and committee meetings for a governance \
 professional, applying the Minutes Profile below.
@@ -34,20 +34,16 @@ class PromptContext:
     meeting_info: MeetingInfo
 
     def system(self) -> str:
-        # Full logic.md when the profile has it, otherwise the shorter core instructions.
-        core = self.profile.operational_instructions.core
-        instructions = self.profile.logic or f"# Minuting instructions\n\n{core}"
-        return "\n\n".join([PREAMBLE, instructions, render_profile(self.profile)])
+        """Same for every stage: our preamble, then the profile's full minuting logic."""
+        return f"{PREAMBLE}\n\n{self.profile.logic}"
 
     def evidence(self) -> str:
         info = self.meeting_info.model_dump_json(exclude_none=True, indent=2)
         return f"<meeting_information>\n{info}\n</meeting_information>\n\n{self.bundle.render()}"
 
-    def message(self, task: str, guidance: str | None = None, **context: object) -> str:
-        """Shared evidence first, then stage guidance, earlier outputs and the task."""
+    def message(self, task: str, **context: object) -> str:
+        """Shared evidence first, then earlier outputs and the task."""
         parts = [self.evidence()]
-        if guidance and not self.profile.logic:  # logic.md already holds every stage's guidance
-            parts.append(f"<stage_guidance>\n{guidance}\n</stage_guidance>")
         for tag, value in context.items():
             parts.append(f"<{tag}>\n{_text(value)}\n</{tag}>")
         parts.append(f"<task>\n{task.strip()}\n</task>")
@@ -85,7 +81,8 @@ def _text(value: object) -> str:
 
 
 TASK_EVIDENCE = """
-Stage 1: understand the meeting evidence. Do not decide yet what belongs in the minutes.
+Stage 1: understand the meeting evidence, following Stage 1 (Understand the Meeting Evidence) \
+of the Operational AI Logic. Do not decide yet what belongs in the minutes.
 - Describe each source and its limitations (gaps, unclear speakers, partial coverage).
 - List the agenda items exactly as numbered on the agenda. The stated purpose is an expectation, \
 not evidence of what happened.
@@ -102,7 +99,8 @@ the proceedings, or the materials come from different meetings. Otherwise leave 
 """
 
 TASK_POLICY = """
-Stage 2: apply the Minuting Policy (MP1-MP9) to decide what the minutes record and in what depth.
+Stage 2: apply the Minuting Policy (MP1-MP9) to decide what the minutes record and in what \
+depth, following Stage 2 (Apply Minuting Policy) of the Operational AI Logic.
 The confirmed evidence map was reviewed by the governance professional: where it differs from \
 your own reading, follow it.
 - For every agenda item, choose the treatment and select the outcomes, material points, actions \
@@ -120,8 +118,9 @@ to record, not a question.
 """
 
 TASK_STYLE = """
-Stage 3: write the minutes in the Writing Style (WS1-WS6), expressing only the substance in the \
-selection. Do not add, drop or strengthen substance.
+Stage 3: write the minutes in the Writing Style (WS1-WS6), following Stage 3 (Apply Writing \
+Style) of the Operational AI Logic. Express only the substance in the selection. Do not add, \
+drop or strengthen substance.
 - Write full minutes, not a summary. For each significant item record the matter considered, \
 the principal reasoning, significant challenge or risk, and the outcome with its qualifications.
 - One minute item per selected item, in agenda order, using the agenda numbering. Place \
@@ -140,9 +139,10 @@ when no passage can be written.
 """
 
 TASK_VALIDATION = """
-Stage 4: validate the draft once against the evidence, the confirmed map, the selection and the \
-profile. Check factual accuracy, completeness (business left out), Minuting Policy, Writing \
-Style (including meaning changed by rewording), consistency, and question quality.
+Stage 4: validate the draft once, following Stage 4 (Validate the Draft) of the Operational AI \
+Logic, against the evidence, the confirmed map, the selection and the profile. Check factual \
+accuracy, completeness (business left out), Minuting Policy, Writing Style (including meaning \
+changed by rewording), consistency, and question quality.
 - Report only genuine problems, each routed to the stage responsible.
 - A difference of preference is not a finding.
 - Include the automated check results below where they are real problems.

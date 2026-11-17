@@ -48,7 +48,7 @@ def test_list_and_get_profile(client: TestClient, seeded: ProfileContent) -> Non
         {
             "slug": "std",
             "name": "Test Standard Profile",
-            "description": "Minimal profile used by the test suite.",
+            "description": None,
             "body_name": None,
             "based_on_slug": None,
             "active_version": 1,
@@ -101,17 +101,7 @@ def test_version_lifecycle(client: TestClient, seeded: ProfileContent) -> None:
     assert client.get("/api/profiles/std/versions/2").json()["confirmed_by"] == "paul"
 
 
-def test_floor_violation_is_422(client: TestClient, seeded: ProfileContent) -> None:
-    content = seeded.model_dump(mode="json") | {"hard_floors": ["Anything goes."]}
-    response = client.post("/api/profiles/std/versions", json={"content": content})
-    assert response.status_code == 422
-    assert response.json()["detail"] == {
-        "floor_violations": ["hard_floors differ from the parent version"]
-    }
-
-
 def test_invalid_content_is_422(client: TestClient, seeded: ProfileContent) -> None:
-    content = seeded.model_dump(mode="json")
-    content["writing_style"] = content["writing_style"][:3]
+    content = seeded.model_dump(mode="json") | {"logic": ""}
     response = client.post("/api/profiles/std/versions", json={"content": content})
     assert response.status_code == 422

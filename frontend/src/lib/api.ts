@@ -219,21 +219,18 @@ export interface ProfileDetail extends ProfileSummary {
 	versions: VersionSummary[];
 }
 
-export interface ProfileDimension {
-	code: string;
-	title: string;
-	default_standard: string;
+export interface ProfileContent {
+	name: string;
+	description: string | null;
+	/** The full minuting logic in markdown, sent to the model on every call. */
+	logic: string;
+	/** Word layout settings; the API fills in defaults. */
+	presentation?: Record<string, unknown>;
 }
 
 export interface ProfileVersion extends VersionSummary {
 	profile_slug: string;
-	content: {
-		name: string;
-		description: string | null;
-		hard_floors: string[];
-		minuting_policy: ProfileDimension[];
-		writing_style: ProfileDimension[];
-	};
+	content: ProfileContent;
 }
 
 export class ApiError extends Error {

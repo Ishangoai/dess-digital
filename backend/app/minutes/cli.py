@@ -1,8 +1,10 @@
 """Run the minuting pipeline on local files, without the API or database.
 
 Usage:
-    uv run python -m app.minutes.cli --profile ../reference/profiles/dess_standard.yaml \
-        --agenda agenda.docx --transcript transcript.txt --out ../reference/out
+    uv run python -m app.minutes.cli --agenda agenda.docx --transcript transcript.txt \
+        --out ../reference/out
+
+--profile defaults to the bundled DESS Standard profile.
 """
 
 import argparse
@@ -14,19 +16,18 @@ from app.llm import get_llm_client
 from app.minutes.evidence import EvidenceBundle, MeetingInfo, SourceRole, SourceText
 from app.minutes.extract import extract_text
 from app.minutes.pipeline import Pipeline, StageError, StageResult
-from app.minutes.profile_content import load_profile_file, with_logic
+from app.minutes.profile_content import DEFAULT_PROFILE_PATH, load_profile_file
 from app.minutes.prompts import PromptContext
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Draft minutes from local files")
-    parser.add_argument("--profile", type=Path, required=True)
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE_PATH, help=".md or .json")
     parser.add_argument("--agenda", type=Path, required=True)
     parser.add_argument("--transcript", type=Path)
     parser.add_argument("--notes", type=Path)
     parser.add_argument("--out", type=Path, required=True, help="folder for the JSON outputs")
     parser.add_argument("--max-tokens", type=int, default=65536)
-    parser.add_argument("--logic", type=Path, help="logic.md to send instead of the core text")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if not args.transcript and not args.notes:
@@ -41,8 +42,7 @@ def main(argv: list[str] | None = None) -> int:
             for role, p, sid in files
         ]
     )
-    profile = with_logic(load_profile_file(args.profile), args.logic)
-    ctx = PromptContext(profile, bundle, MeetingInfo())
+    ctx = PromptContext(load_profile_file(args.profile), bundle, MeetingInfo())
     pipeline = Pipeline(get_llm_client(), ctx, max_tokens=args.max_tokens)
     args.out.mkdir(parents=True, exist_ok=True)
 

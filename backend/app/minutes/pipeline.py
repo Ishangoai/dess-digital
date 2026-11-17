@@ -88,17 +88,14 @@ class Pipeline:
         )
 
     def analyse_evidence(self) -> StageResult[EvidenceAnalysis]:
-        guidance = self.ctx.profile.operational_instructions.stages.evidence
-        message = self.ctx.message(prompts.TASK_EVIDENCE, guidance)
+        message = self.ctx.message(prompts.TASK_EVIDENCE)
         return self._call(PipelineStage.EVIDENCE, EvidenceAnalysis, message)
 
     def select_content(
         self, mapping: EvidenceMap, analysis: EvidenceAnalysis
     ) -> StageResult[PolicySelection]:
-        stages = self.ctx.profile.operational_instructions.stages
         message = self.ctx.message(
             prompts.TASK_POLICY,
-            stages.policy,
             confirmed_evidence_map=render_mapping(mapping),
             evidence_notes=_analysis_notes(analysis),
         )
@@ -107,11 +104,8 @@ class Pipeline:
     def write_minutes(
         self, mapping: EvidenceMap, selection: PolicySelection
     ) -> StageResult[DraftMinutes]:
-        stages = self.ctx.profile.operational_instructions.stages
-        guidance = "\n\n".join(g for g in (stages.style, stages.questions) if g)
         message = self.ctx.message(
             prompts.TASK_STYLE,
-            guidance or None,
             confirmed_evidence_map=render_mapping(mapping),
             selection=selection,
         )
@@ -126,7 +120,6 @@ class Pipeline:
     ) -> StageResult[ValidationReport]:
         message = self.ctx.message(
             prompts.TASK_VALIDATION,
-            self.ctx.profile.operational_instructions.stages.validation,
             confirmed_evidence_map=render_mapping(mapping),
             selection=selection,
             draft=draft,
