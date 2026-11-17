@@ -5,9 +5,18 @@
 	import Sidebar from '#lib/components/Sidebar.svelte';
 	import { ui } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
-
+	import Login from '#lib/components/Login.svelte';
+	
 	let { children }: LayoutProps = $props();
 	let menuOpen = $state(false);
+
+	let authenticated = $state(false);
+
+	async function handleLogout() {
+		await fetch('/api/auth/logout', { method: 'POST' });
+		authenticated = false;
+	}
+	
 </script>
 
 <svelte:head>
@@ -16,6 +25,9 @@
 </svelte:head>
 
 <div class="shell" class:collapsed={ui.sidebarCollapsed}>
+{#if !authenticated}
+	<Login onsuccess={() => (authenticated = true)} />
+{:else}
 	<header class="mobile-bar">
 		<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
 			<Icon name="menu" size={18} />
@@ -28,6 +40,7 @@
 			onnavigate={() => (menuOpen = false)}
 			collapsed={ui.sidebarCollapsed && !menuOpen}
 			ontoggle={menuOpen ? undefined : ui.toggleSidebar}
+			onlogout={handleLogout}
 		/>
 	</aside>
 	{#if menuOpen}
@@ -38,6 +51,8 @@
 		{@render children()}
 	</main>
 </div>
+
+{/if}
 
 <style>
 	.shell {

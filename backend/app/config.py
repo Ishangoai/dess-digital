@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     minutes_max_input_chars: int = 1_500_000
     minutes_max_upload_bytes: int = 20_000_000
 
+    # Single-account PoC authentication
+    auth_user: str = "admin"
+    auth_password: str = "admin"
+    auth_secret: str = "change-this-random-secret-key"
+
     @property
     def uploads_dir(self) -> Path:
         """Resolves to the persisted mount: /data/files/uploads."""

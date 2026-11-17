@@ -2,10 +2,10 @@ import logging
 import os
 
 import uvicorn
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Depends
 
 from app.config import settings
-from app.routers import draft, files, job, llm, profile
+from app.routers import draft, files, job, llm, profile, auth
 
 # Root handler so app loggers (e.g. app.llm prompt/token logs) reach stdout under uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -23,15 +23,20 @@ api = APIRouter(prefix="/api")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+# Public auth endpoints (/api/auth/login, /api/auth/logout)
+api.include_router(auth.router)
 
-api.include_router(files.router)
-api.include_router(job.router)
+# Protected routes
+protected = APIRouter(dependencies=[Depends(auth.require_auth)])
+protected.include_router(files.router)
+protected.include_router(job.router)
 if settings.llm_test_routes:
-    api.include_router(llm.router)
+    protected.include_router(llm.router)
 if settings.minutes_routes:
-    api.include_router(profile.router)
-    api.include_router(draft.router)
+    protected.include_router(profile.router)
+    protected.include_router(draft.router)
 
+api.include_router(protected)
 app.include_router(api)
 
 if __name__ == "__main__":
