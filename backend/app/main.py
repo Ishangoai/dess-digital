@@ -2,12 +2,12 @@ import logging
 import os
 
 import uvicorn
-from fastapi import APIRouter, FastAPI, Depends
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
 from app.config import settings
-from app.routers import draft, files, job, llm, profile, auth
+from app.routers import auth, draft, files, job, llm, profile
 
 # Root handler so app loggers (e.g. app.llm prompt/token logs) reach stdout under uvicorn.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")

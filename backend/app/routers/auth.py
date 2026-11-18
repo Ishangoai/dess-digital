@@ -26,8 +26,9 @@ def _verify_token(token: str | None) -> bool:
         return False
     username, _ = token.split(":", 1)
     expected = _make_token(username)
-    return hmac.compare_digest(token, expected) and secrets.compare_digest(username, settings.auth_user)
-
+    return (
+        hmac.compare_digest(token, expected) 
+        and secrets.compare_digest(username, settings.auth_user))
 
 def require_auth(request: Request) -> None:
     if not _verify_token(request.cookies.get(COOKIE_NAME)):
