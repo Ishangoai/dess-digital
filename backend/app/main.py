@@ -25,11 +25,13 @@ api = APIRouter(prefix="/api")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
 # Public auth endpoints (/api/auth/login, /api/auth/logout)
 api.include_router(auth.router)
 
 # Protected routes
 protected = APIRouter(dependencies=[Depends(auth.require_auth)])
+
 
 @protected.get("/openapi.json", include_in_schema=False)
 def openapi_schema():
@@ -39,6 +41,7 @@ def openapi_schema():
 @protected.get("/docs", include_in_schema=False)
 def swagger_ui():
     return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - Docs")
+
 
 protected.include_router(files.router)
 protected.include_router(job.router)
