@@ -45,6 +45,22 @@ Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded
 cd backend && uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
 ```
 
+## Authentication
+
+The app uses single-account session-cookie authentication (`dess_session`, HMAC-signed `HttpOnly` cookie) to protect the UI, `/api/*` routes, and API docs (`/api/docs`, `/api/openapi.json`). `/api/health` and `/api/auth/*` remain public.
+
+Configure credentials in `.env` (or `backend/.env` when running without Docker):
+
+```env
+AUTH_USER=admin
+AUTH_PASSWORD=your-password
+AUTH_SECRET=any-long-random-secret-string
+```
+
+- Signing in at the login gate calls `POST /api/auth/login` and issues the session cookie.
+- Clicking **Sign out** in the sidebar calls `POST /api/auth/logout` and clears the cookie.
+- After updating `AUTH_*` values in `.env`, recreate the API container: `docker compose up -d --force-recreate api`.
+
 ### Drafting minutes
 
 With `MINUTES_ROUTES=true`, `LLM_MODEL` and `LLM_API_KEY` set in `backend/.env`:
