@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import create_tables, enable_sqlite_foreign_keys
+from app.main import app
 from app.minutes.profile_content import ProfileContent, load_profile_file
+from app.routers.auth import require_auth
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILE_FIXTURE = FIXTURES / "minutes" / "profile.yaml"
@@ -39,3 +41,10 @@ def db(session_factory: sessionmaker[Session]) -> Iterator[Session]:
 @pytest.fixture
 def profile_content() -> ProfileContent:
     return load_profile_file(PROFILE_FIXTURE)
+
+
+@pytest.fixture(autouse=True)
+def bypass_auth_for_existing_tests() -> Iterator[None]:
+    app.dependency_overrides[require_auth] = lambda: None
+    yield
+    app.dependency_overrides.pop(require_auth, None)

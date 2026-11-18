@@ -5,9 +5,18 @@
 	import Sidebar from '#lib/components/Sidebar.svelte';
 	import { ui } from '#lib/ui.svelte.ts';
 	import type { LayoutProps } from './$types';
-
+	import Login from '#lib/components/Login.svelte';
+	
 	let { children }: LayoutProps = $props();
 	let menuOpen = $state(false);
+
+	let authenticated = $state(false);
+
+	async function handleLogout() {
+		await fetch('/api/auth/logout', { method: 'POST' });
+		authenticated = false;
+	}
+	
 </script>
 
 <svelte:head>
@@ -15,29 +24,35 @@
 	<title>DESS Minutes</title>
 </svelte:head>
 
-<div class="shell" class:collapsed={ui.sidebarCollapsed}>
-	<header class="mobile-bar">
-		<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
-			<Icon name="menu" size={18} />
-		</button>
-		<a class="mobile-brand" href="/">DESS Minutes</a>
-	</header>
+{#if !authenticated}
+	<Login onsuccess={() => (authenticated = true)} />
+{:else}
+	<div class="shell" class:collapsed={ui.sidebarCollapsed}>
+		<header class="mobile-bar">
+			<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
+				<Icon name="menu" size={18} />
+			</button>
+			<a class="mobile-brand" href="/">DESS Minutes</a>
+		</header>
 
-	<aside class="side" class:open={menuOpen}>
-		<Sidebar
-			onnavigate={() => (menuOpen = false)}
-			collapsed={ui.sidebarCollapsed && !menuOpen}
-			ontoggle={menuOpen ? undefined : ui.toggleSidebar}
-		/>
-	</aside>
-	{#if menuOpen}
-		<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
-	{/if}
+		<aside class="side" class:open={menuOpen}>
+			<Sidebar
+				onnavigate={() => (menuOpen = false)}
+				collapsed={ui.sidebarCollapsed && !menuOpen}
+				ontoggle={menuOpen ? undefined : ui.toggleSidebar}
+				onlogout={handleLogout}
+			/>
+		</aside>
+		{#if menuOpen}
+			<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
+		{/if}
 
-	<main class="main">
-		{@render children()}
-	</main>
-</div>
+		<main class="main">
+			{@render children()}
+		</main>
+	</div>
+
+{/if}
 
 <style>
 	.shell {
