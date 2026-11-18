@@ -1,4 +1,3 @@
-
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { goto, invalidate } from '$app/navigation';
