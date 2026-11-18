@@ -24,33 +24,33 @@
 	<title>DESS Minutes</title>
 </svelte:head>
 
-<div class="shell" class:collapsed={ui.sidebarCollapsed}>
 {#if !authenticated}
 	<Login onsuccess={() => (authenticated = true)} />
 {:else}
-	<header class="mobile-bar">
-		<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
-			<Icon name="menu" size={18} />
-		</button>
-		<a class="mobile-brand" href="/">DESS Minutes</a>
-	</header>
+	<div class="shell" class:collapsed={ui.sidebarCollapsed}>
+		<header class="mobile-bar">
+			<button class="btn ghost" onclick={() => (menuOpen = true)} aria-label="Open menu">
+				<Icon name="menu" size={18} />
+			</button>
+			<a class="mobile-brand" href="/">DESS Minutes</a>
+		</header>
 
-	<aside class="side" class:open={menuOpen}>
-		<Sidebar
-			onnavigate={() => (menuOpen = false)}
-			collapsed={ui.sidebarCollapsed && !menuOpen}
-			ontoggle={menuOpen ? undefined : ui.toggleSidebar}
-			onlogout={handleLogout}
-		/>
-	</aside>
-	{#if menuOpen}
-		<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
-	{/if}
+		<aside class="side" class:open={menuOpen}>
+			<Sidebar
+				onnavigate={() => (menuOpen = false)}
+				collapsed={ui.sidebarCollapsed && !menuOpen}
+				ontoggle={menuOpen ? undefined : ui.toggleSidebar}
+				onlogout={handleLogout}
+			/>
+		</aside>
+		{#if menuOpen}
+			<button class="scrim" onclick={() => (menuOpen = false)} aria-label="Close menu"></button>
+		{/if}
 
-	<main class="main">
-		{@render children()}
-	</main>
-</div>
+		<main class="main">
+			{@render children()}
+		</main>
+	</div>
 
 {/if}
 

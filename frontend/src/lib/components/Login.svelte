@@ -99,4 +99,19 @@
 		font-size: 0.84rem;
 		color: var(--err-fg);
 	}
+	.login-card input {
+		width: 100%;
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		color: var(--text);
+		font: inherit;
+		font-size: 0.92rem;
+	}
+
+	.login-card input:focus {
+		outline: none;
+		border-color: var(--accent);
+	}
 </style>

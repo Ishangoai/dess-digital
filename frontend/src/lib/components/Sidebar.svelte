@@ -16,8 +16,14 @@
 	let {
 		onnavigate,
 		collapsed = false,
-		ontoggle
-	}: { onnavigate?: () => void; collapsed?: boolean; ontoggle?: () => void } = $props();
+		ontoggle,
+		onlogout
+	}: { 
+		onnavigate?: () => void; 
+		collapsed?: boolean; 
+		ontoggle?: () => void;
+		onlogout?: () => void 
+	} = $props();
 
 	let runs = $state<DraftRunSummary[]>([]);
 	let loaded = $state(false);
@@ -99,6 +105,11 @@
 			<a href="/profiles" class:active={page.url.pathname.startsWith('/profiles')} title="Minutes profiles">
 				<Icon name="book" />
 			</a>
+			{#if onlogout}
+				<button class="foot-btn" onclick={onlogout} title="Sign out" aria-label="Sign out">
+					<Icon name="logOut" />
+				</button>
+			{/if}
 		</div>
 	{:else}
 
@@ -148,6 +159,12 @@
 			<Icon name="book" />
 			Minutes profiles
 		</a>
+		{#if onlogout}
+			<button class="foot-btn" onclick={onlogout}>
+				<Icon name="logOut" />
+				Sign out
+			</button>
+		{/if}
 	</div>
 	{/if}
 </div>
@@ -419,6 +436,24 @@
 
 	.foot a:hover,
 	.foot a.active {
+		background: rgba(17, 24, 39, 0.04);
+		color: var(--text);
+	}
+	.foot-btn {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.45rem 0.7rem;
+		border: none;
+		background: transparent;
+		border-radius: var(--radius-sm);
+		font-size: 0.85rem;
+		color: var(--text-2);
+		cursor: pointer;
+		text-align: left;
+	}
+	.foot-btn:hover {
 		background: rgba(17, 24, 39, 0.04);
 		color: var(--text);
 	}

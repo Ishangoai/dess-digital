@@ -3,6 +3,8 @@ import os
 
 import uvicorn
 from fastapi import APIRouter, FastAPI, Depends
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 
 from app.config import settings
 from app.routers import draft, files, job, llm, profile, auth
@@ -12,8 +14,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="dess-digital",
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
+    docs_url=None,
+    openapi_url=None,
     redirect_slashes=False,
 )
 api = APIRouter(prefix="/api")
@@ -28,6 +30,16 @@ api.include_router(auth.router)
 
 # Protected routes
 protected = APIRouter(dependencies=[Depends(auth.require_auth)])
+
+@protected.get("/openapi.json", include_in_schema=False)
+def openapi_schema():
+    return get_openapi(title=app.title, version=app.version, routes=app.routes)
+
+
+@protected.get("/docs", include_in_schema=False)
+def swagger_ui():
+    return get_swagger_ui_html(openapi_url="/api/openapi.json", title=f"{app.title} - Docs")
+
 protected.include_router(files.router)
 protected.include_router(job.router)
 if settings.llm_test_routes:
