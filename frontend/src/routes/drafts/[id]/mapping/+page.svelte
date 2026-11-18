@@ -1,3 +1,4 @@
+
 <script lang="ts">
 	import { slide } from 'svelte/transition';
 	import { goto, invalidate } from '$app/navigation';
@@ -51,10 +52,19 @@
 	let dirty = $state(false);
 	let editing = $state<string | null>(null);
 	let open = $state<Record<string, boolean>>({});
+
+	// Attention items ignored during the current page session.
+	let ignoredAttention = $state<Set<string>>(new Set());
+
+	function ignoreAttention(id: string) {
+		ignoredAttention = new Set([...ignoredAttention, id]);
+	}
+
 	$effect.pre(() => {
 		rows = toRows();
 		dirty = false;
 		editing = null;
+		ignoredAttention = new Set();
 	});
 
 	let attentionOpen = $state(false);
@@ -64,6 +74,7 @@
 		attentionOpen = true;
 		attentionBox?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
+
 	let busy = $state(false);
 	let elapsed = $state(0);
 	let error = $state('');
@@ -72,26 +83,63 @@
 	const retryDrafting = $derived(
 		run.status === 'failed' && !!run.error_stage && run.error_stage !== 'evidence'
 	);
+
 	const groups = $derived([
 		...review.mapping.agenda_items.map((i) => ({ ref: i.ref, heading: i.heading, extra: false })),
 		...review.mapping.additional_business.map((b) => ({ ref: b.key, heading: b.heading, extra: true }))
 	]);
+
 	const headings = $derived(new Map(groups.map((g) => [g.ref, g.heading])));
 	const sourceIds = $derived([...new Set(run.documents.map((d) => d.source_id))]);
 	const sourceNames = $derived(new Map(run.documents.map((d) => [d.source_id, d.role])));
+
 	const unassigned = $derived(rows.filter((r) => !r.item_ref || !headings.has(r.item_ref)));
+
 	// Uncertainties and source limitations from the analysis, shown with the items needing attention.
 	const notes = $derived([
-		...(run.analysis?.uncertainties ?? []).map((u) => ({
+		...(run.analysis?.uncertainties ?? []).map((u, i) => ({
+			id: `note:uncertainty:${i}`,
 			ref: u.item_ref ? `Item ${u.item_ref}` : 'Meeting',
 			text: u.description,
 			extra: u.competing_readings.length ? `Possible readings: ${u.competing_readings.join(' / ')}` : ''
 		})),
 		...(run.analysis?.sources ?? [])
 			.filter((src) => src.limitations.length)
-			.map((src) => ({ ref: src.source_id, text: src.limitations.join('; '), extra: '' }))
+			.map((src, i) => ({
+				id: `note:source:${i}`,
+				ref: src.source_id,
+				text: src.limitations.join('; '),
+				extra: ''
+			}))
 	]);
-	const attention = $derived(unassigned.length + review.uncovered.length + notes.length);
+
+	// Keep only attention items that have not been ignored.
+	const visibleNotes = $derived(
+		notes.filter((n) => !ignoredAttention.has(n.id))
+	);
+
+	const visibleUnassigned = $derived(
+		unassigned.filter((r) => !ignoredAttention.has(`unassigned:${r.segment_id}`))
+	);
+
+	const visibleUncovered = $derived(
+		review.uncovered
+			.map((ref, i) => ({
+				ref,
+				excerpt: review.uncovered_excerpts[i],
+				index: i,
+				id: `uncovered:${ref.source_id}:${ref.start}-${ref.end}`
+			}))
+			.filter((item) => !ignoredAttention.has(item.id))
+	);
+
+	// Total attention items before ignoring any.
+	const totalAttention = $derived(unassigned.length + review.uncovered.length + notes.length);
+
+	// Attention items currently visible to the user.
+	const attention = $derived(
+		visibleUnassigned.length + visibleUncovered.length + visibleNotes.length
+	);
 
 	function rowsFor(ref: string) {
 		return rows.filter((r) => r.item_ref === ref);
@@ -109,9 +157,12 @@
 
 	function fileUncovered(ref: LineRef, excerpt: string, itemRef: string) {
 		if (!itemRef) return;
+
 		const used = new Set(rows.map((r) => r.segment_id));
 		let n = rows.length + 1;
+
 		while (used.has(`S${n}`)) n++;
+
 		rows.push({
 			segment_id: `S${n}`,
 			source_id: ref.source_id,
@@ -122,6 +173,7 @@
 			summary: '',
 			excerpt
 		});
+
 		edited();
 	}
 
@@ -131,6 +183,7 @@
 
 	function editedMapping(): EvidenceMap {
 		const previous = new Map(review.mapping.segments.map((s) => [s.segment_id, s]));
+
 		return {
 			agenda_items: review.mapping.agenda_items,
 			additional_business: review.mapping.additional_business,
@@ -155,19 +208,23 @@
 		busy = true;
 		error = '';
 		elapsed = 0;
+
 		const timer = window.setInterval(() => elapsed++, 1000);
 		const id = run.id;
+
 		// Pick up the drafting status once the request has started, so the header, sidebar and
 		// AI activity page follow the stages live.
 		const started = window.setTimeout(() => {
 			invalidate('app:run');
 			draftsChanged();
 		}, 800);
+
 		try {
 			// A failed drafting run keeps its confirmed mapping; only send edits while reviewing.
 			await api.generate(id, editable && dirty ? editedMapping() : null);
 			await invalidate('app:run');
 			draftsChanged();
+
 			// Only move on if the user is still looking at this meeting's mapping.
 			if (page.url.pathname === `/drafts/${id}/mapping`) await goto(`/drafts/${id}/minutes`);
 		} catch (e) {
@@ -182,7 +239,7 @@
 	}
 </script>
 
-{#snippet passage(row: Row)}
+{#snippet passage(row: Row, showIgnore = false)}
 	{@const isEditing = editing === row.segment_id}
 	<li class="passage" class:editing={isEditing}>
 		<div class="p-main">
@@ -204,6 +261,7 @@
 					{/if}
 				</div>
 			</div>
+
 			{#if editable}
 				<button
 					class="btn ghost sm"
@@ -212,6 +270,16 @@
 					aria-label="Edit passage {row.segment_id}"
 				>
 					{#if isEditing}<Icon name="check" size={14} /> Done{:else}<Icon name="pencil" size={14} /> Edit{/if}
+				</button>
+			{/if}
+
+			{#if showIgnore}
+				<button
+					class="btn ghost sm"
+					onclick={() => ignoreAttention(`unassigned:${row.segment_id}`)}
+					aria-label="Ignore this attention item"
+				>
+					Ignore
 				</button>
 			{/if}
 		</div>
@@ -295,7 +363,7 @@
 			</span>
 		</div>
 
-		{#if attention}
+		{#if totalAttention > 0}
 			<details class="group attention" bind:open={attentionOpen} bind:this={attentionBox}>
 				<summary class="g-head">
 					<span class="g-ref warn"><Icon name="alert" size={14} /></span>
@@ -304,59 +372,87 @@
 					<span class="spacer"></span>
 					<Icon name="chevronDown" size={16} />
 				</summary>
-				{#if notes.length}
-					<ul class="passages">
-						{#each notes as n, i (i)}
-							<li class="passage">
-								<div class="p-main">
-									<span class="ref">{n.ref}</span>
-									<div class="p-body">
-										<p>{n.text}</p>
-										{#if n.extra}<span class="tiny muted">{n.extra}</span>{/if}
-									</div>
-								</div>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-				{#if unassigned.length}
-					<ul class="passages">
-						{#each unassigned as row (row.segment_id)}{@render passage(row)}{/each}
-					</ul>
-				{/if}
-				{#if review.uncovered.length}
-					<ul class="passages">
-						{#each review.uncovered as ref, i (lineRef(ref))}
-							{@const filed = covered.has(`${ref.source_id}${ref.start}-${ref.end}`)}
-							<li class="passage uncovered" class:filed>
-								<div class="p-main">
-									<span class="ref">{lineRef(ref)}</span>
-									<div class="p-body">
-										<p class="small">{review.uncovered_excerpts[i]}</p>
-										<span class="tiny muted">
-											{filed
-												? 'Filed. It is saved when you draft the minutes.'
-												: editable
-													? 'Not filed under any agenda item. File it under one if it belongs in the minutes.'
-													: 'Not filed under any agenda item.'}
-										</span>
-									</div>
-									{#if editable && !filed}
-										<select
-											class="file-under"
-											aria-label="File these lines under an agenda item"
-											onchange={(e) => fileUncovered(ref, review.uncovered_excerpts[i], e.currentTarget.value)}
+
+				{#if visibleNotes.length || visibleUnassigned.length || visibleUncovered.length}
+					{#if visibleNotes.length}
+						<ul class="passages">
+							{#each visibleNotes as n (n.id)}
+								<li class="passage">
+									<div class="p-main">
+										<span class="ref">{n.ref}</span>
+										<div class="p-body">
+											<p>{n.text}</p>
+											{#if n.extra}<span class="tiny muted">{n.extra}</span>{/if}
+										</div>
+										<button
+											class="btn ghost sm"
+											onclick={() => ignoreAttention(n.id)}
+											aria-label="Ignore this attention item"
 										>
-											<option value="">File under...</option>
-											{#each review.valid_item_refs as r (r)}
-												<option value={r}>{r}. {headings.get(r) ?? ''}</option>
-											{/each}
-										</select>
-									{/if}
-								</div>
-							</li>
-						{/each}
-					</ul>
+											Ignore
+										</button>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+
+					{#if visibleUnassigned.length}
+						<ul class="passages">
+							{#each visibleUnassigned as row (row.segment_id)}
+								{@render passage(row, true)}
+							{/each}
+						</ul>
+					{/if}
+
+					{#if visibleUncovered.length}
+						<ul class="passages">
+							{#each visibleUncovered as item (item.id)}
+								{@const ref = item.ref}
+								{@const i = item.index}
+								{@const filed = covered.has(`${ref.source_id}${ref.start}-${ref.end}`)}
+								<li class="passage uncovered" class:filed>
+									<div class="p-main">
+										<span class="ref">{lineRef(ref)}</span>
+										<div class="p-body">
+											<p class="small">{item.excerpt}</p>
+											<span class="tiny muted">
+												{filed
+													? 'Filed. It is saved when you draft the minutes.'
+													: editable
+														? 'Not filed under any agenda item. File it under one if it belongs in the minutes.'
+														: 'Not filed under any agenda item.'}
+											</span>
+										</div>
+										{#if editable && !filed}
+											<select
+												class="file-under"
+												aria-label="File these lines under an agenda item"
+												onchange={(e) => fileUncovered(ref, item.excerpt, e.currentTarget.value)}
+											>
+												<option value="">File under...</option>
+												{#each review.valid_item_refs as r (r)}
+													<option value={r}>{r}. {headings.get(r) ?? ''}</option>
+												{/each}
+											</select>
+										{/if}
+										<button
+											class="btn ghost sm"
+											onclick={() => ignoreAttention(item.id)}
+											aria-label="Ignore this attention item"
+										>
+											Ignore
+										</button>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{:else}
+					<p class="all-good small">
+						<Icon name="check" size={14} />
+						All remaining attention items have been ignored for this session.
+					</p>
 				{/if}
 			</details>
 		{:else}
