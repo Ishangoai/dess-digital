@@ -1,12 +1,17 @@
 """Draft minutes as an editable Word document, with clarification questions as comments."""
 
+import hashlib
 import io
 import logging
+import re
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
 import docx
 from docx.document import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
@@ -32,15 +37,58 @@ log = logging.getLogger("app.minutes")
 MARKER = "{{MINUTES}}"
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+# Bookmarks let an edited copy be lined up with the draft paragraph by paragraph.
+BOOKMARK_PREFIX = "dess_"
+HEADING_PREFIX = "dess_h_"
+ACTIONS_SECTION = "actions"
+IDENTIFIER_PREFIX = "dess-export:"
+_BOOKMARK_MAX = 40  # Word's limit
+
+
+@dataclass
+class ExportManifest:
+    """What the export put where, for reading an edited copy back."""
+
+    paragraphs: dict[str, str] = field(default_factory=dict)  # bookmark -> paragraph_id
+    headings: dict[str, str] = field(default_factory=dict)  # bookmark -> item_ref or "actions"
+    questions: dict[str, str] = field(default_factory=dict)  # comment id -> question_id
+
+
+@dataclass
+class RenderedMinutes:
+    data: bytes
+    manifest: ExportManifest
+
 
 def render_minutes_docx(
     draft: DraftMinutes, presentation: PresentationSettings, template: bytes | None = None
 ) -> bytes:
+    return render_minutes(draft, presentation, template).data
+
+
+def render_minutes(
+    draft: DraftMinutes,
+    presentation: PresentationSettings,
+    template: bytes | None = None,
+    identifier: str | None = None,
+) -> RenderedMinutes:
+    """The draft as Word. identifier is written to the core properties to recognise it later."""
     writer = _Writer(presentation, template)
     writer.write(draft)
+    if identifier:
+        writer.doc.core_properties.identifier = identifier
     buffer = io.BytesIO()
     writer.doc.save(buffer)
-    return buffer.getvalue()
+    return RenderedMinutes(buffer.getvalue(), writer.manifest)
+
+
+def bookmark_name(key: str, prefix: str = BOOKMARK_PREFIX) -> str:
+    """A valid Word bookmark name for a paragraph id or item ref, e.g. 4.p2 -> dess_4_p2."""
+    name = prefix + re.sub(r"[^A-Za-z0-9]", "_", key)
+    if len(name) > _BOOKMARK_MAX:
+        digest = hashlib.sha1(key.encode()).hexdigest()[:8]
+        name = f"{name[: _BOOKMARK_MAX - 9]}_{digest}"
+    return name
 
 
 class _Writer:
@@ -50,6 +98,13 @@ class _Writer:
         self.marker: Paragraph | None = None
         self.title_runs: list[Run] = []
         self.heading_runs: dict[str, list[Run]] = {}
+        self.manifest = ExportManifest()
+        existing = [
+            int(b.get(qn("w:id"), "0"))
+            for b in self.doc.element.body.iter(qn("w:bookmarkStart"))
+            if (b.get(qn("w:id")) or "").isdigit()
+        ]
+        self.next_bookmark_id = max(existing, default=-1) + 1
         if template:
             self.marker = next((p for p in self.doc.paragraphs if p.text.strip() == MARKER), None)
             if self.marker is None:
@@ -90,6 +145,7 @@ class _Writer:
     def _item(self, index: int, item: MinuteItem, questions: list[ClarificationQuestion]) -> None:
         number = self._item_number(index, item.item_ref)
         heading = self._para(f"{number} {item.heading}".strip(), self.p.styles.heading)
+        self._bookmark(heading, bookmark_name(item.item_ref, HEADING_PREFIX), item.item_ref, True)
         self.heading_runs[item.item_ref] = heading.runs
         for n, paragraph in enumerate(item.paragraphs, 1):
             prefix = (
@@ -131,6 +187,7 @@ class _Writer:
         runs: list[tuple[int, int, Run]] = []
         for a, b in zip(cuts, cuts[1:], strict=False):
             runs.append((a, b, para.add_run(text[a:b])))
+        self._bookmark(para, bookmark_name(paragraph.paragraph_id), paragraph.paragraph_id)
         for q, start, end in spans:
             covered = [run for a, b, run in runs if a >= start and b <= end]
             if covered:
@@ -156,7 +213,10 @@ class _Writer:
             self._para(name, self.p.styles.body)
 
     def _actions_table(self, draft: DraftMinutes) -> None:
-        self._para("Actions", self.p.styles.heading)
+        heading = self._para("Actions", self.p.styles.heading)
+        self._bookmark(
+            heading, bookmark_name(ACTIONS_SECTION, HEADING_PREFIX), ACTIONS_SECTION, True
+        )
         table = self.doc.add_table(rows=1, cols=3)
         if self.p.styles.table in _style_names(self.doc):
             table.style = self.p.styles.table
@@ -187,12 +247,33 @@ class _Writer:
     def _comment(self, runs: list[Run], q: ClarificationQuestion) -> None:
         if not runs:
             return
-        self.doc.add_comment(
+        comment = self.doc.add_comment(
             runs=runs,
             text=q.question,
             author=self.p.comment_author,
             initials=self.p.comment_initials,
         )
+        self.manifest.questions[str(comment.comment_id)] = q.question_id
+
+    def _bookmark(self, para: Paragraph, name: str, key: str, heading: bool = False) -> None:
+        """Wrap the whole paragraph in a bookmark (python-docx has no API for this)."""
+        names = self.manifest.headings if heading else self.manifest.paragraphs
+        base, n = name, 1
+        while name in self.manifest.headings or name in self.manifest.paragraphs:
+            n += 1
+            name = f"{base[: _BOOKMARK_MAX - 3]}_{n}"
+        names[name] = key
+        bookmark_id = str(self.next_bookmark_id)
+        self.next_bookmark_id += 1
+        start = OxmlElement("w:bookmarkStart", {qn("w:id"): bookmark_id, qn("w:name"): name})
+        end = OxmlElement("w:bookmarkEnd", {qn("w:id"): bookmark_id})
+        p = para._p
+        p_pr = p.find(qn("w:pPr"))
+        if p_pr is not None:
+            p_pr.addnext(start)
+        else:
+            p.insert(0, start)
+        p.append(end)
 
     def _clear_body(self) -> None:
         body = self.doc.element.body

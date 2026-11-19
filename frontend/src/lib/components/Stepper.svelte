@@ -5,10 +5,12 @@
 
 	let { run }: { run: DraftRun } = $props();
 
-	// 0: reading evidence, 1: checking the mapping, 2: drafting, 3: done
+	// 0: reading evidence, 1: checking the mapping, 2: drafting, 3: awaiting edits, 4: done
 	const stage = $derived(
 		run.status === 'completed'
-			? 3
+			? run.edited_document
+				? 4
+				: 3
 			: run.status === 'drafting' || (run.status === 'failed' && run.error_stage !== 'evidence')
 				? 2
 				: run.mapping
@@ -19,7 +21,8 @@
 	const steps = $derived([
 		{ label: 'Evidence', href: null },
 		{ label: 'Mapping', href: run.mapping ? `/drafts/${run.id}/mapping` : null },
-		{ label: 'Minutes', href: run.draft ? `/drafts/${run.id}/minutes` : null }
+		{ label: 'Minutes', href: run.draft ? `/drafts/${run.id}/minutes` : null },
+		{ label: 'Edits', href: run.draft ? `/drafts/${run.id}/edits` : null }
 	]);
 </script>
 

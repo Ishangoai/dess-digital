@@ -5,14 +5,17 @@ from pathlib import Path
 
 import docx
 import pytest
+from docx.oxml.ns import qn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.db import get_db
 from app.llm import LLMClient, LLMProviderError
 from app.minutes.profile_content import ProfileContent
-from app.models.draft import DraftRun
+from app.models.draft import DraftRun, ExportedDocument
 from app.routers import draft as draft_routes
 from app.services import profile as profile_svc
 from tests import minutes_samples as samples
@@ -302,3 +305,95 @@ def test_background_failure_marks_run_failed(
     run = client.get(f"/api/drafts/{created['id']}").json()
     assert run["status"] == "failed"
     assert run["error_stage"] == "evidence"
+
+
+def _edited(original: bytes) -> bytes:
+    doc = docx.Document(io.BytesIO(original))
+    target = next(p for p in doc.paragraphs if p.text == "The Board noted the report.")
+    target.runs[0].text = "The Board noted the report and thanked the team."
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def _upload(client: TestClient, run_id: str, data: bytes, name: str = "edited.docx"):
+    return client.post(
+        f"/api/drafts/{run_id}/edited-document",
+        files={"file": (name, data, "application/octet-stream")},
+    )
+
+
+def test_downloads_are_stored(client: TestClient, db: Session) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    first = client.get(f"/api/drafts/{run_id}/document.docx").content
+    client.get(f"/api/drafts/{run_id}/document.docx")
+
+    exports = db.scalars(select(ExportedDocument)).all()
+    assert len(exports) == 2
+    assert exports[0].data == first
+    assert exports[0].manifest["questions"] == {"0": "Q1"}
+    assert docx.Document(io.BytesIO(first)).core_properties.identifier == (
+        f"dess-export:{exports[0].id}"
+    )
+
+
+def test_upload_edited_minutes_and_compare(client: TestClient) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    client.get(f"/api/drafts/{run_id}/document.docx")
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+
+    response = _upload(client, run_id, _edited(original))
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["filename"] == "edited.docx"
+    assert body["comparison"]["counts"]["changed"] == 1
+    changed = [
+        c for s in body["comparison"]["sections"] for c in s["changes"] if c["status"] == "changed"
+    ]
+    assert changed[0]["paragraph_id"] == "3.p1"
+
+    exports = client.get(f"/api/drafts/{run_id}/edited-document").json()
+    assert exports["id"] == body["id"]
+    assert client.get(f"/api/drafts/{run_id}").json()["edited_document"]["id"] == body["id"]
+
+
+def test_upload_finds_the_export_it_came_from(client: TestClient, db: Session) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+    client.get(f"/api/drafts/{run_id}/document.docx")  # a later download
+
+    body = _upload(client, run_id, _edited(original)).json()
+    first = db.scalars(select(ExportedDocument).order_by(ExportedDocument.created_at)).first()
+    assert first is not None and body["export_id"] == str(first.id)
+
+
+def test_upload_without_a_stored_download(client: TestClient, db: Session) -> None:
+    """Files downloaded before exports were stored have no bookmarks; text matching applies."""
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    doc = docx.Document(io.BytesIO(client.get(f"/api/drafts/{run_id}/document.docx").content))
+    for tag in ("w:bookmarkStart", "w:bookmarkEnd"):
+        for el in list(doc.element.body.iter(qn(tag))):
+            el.getparent().remove(el)
+    doc.core_properties.identifier = ""
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    for export in db.scalars(select(ExportedDocument)):
+        db.delete(export)
+    db.commit()
+
+    response = _upload(client, run_id, buffer.getvalue())
+    assert response.status_code == 201
+    comparison = response.json()["comparison"]
+    assert comparison["bookmarks_found"] == 0
+    assert {k for k, v in comparison["counts"].items() if v} == {"unchanged"}
+
+
+def test_upload_errors(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    run_id = create(client)["id"]
+    assert _upload(client, run_id, b"junk").status_code == 409  # no draft yet
+    assert client.get(f"/api/drafts/{run_id}/edited-document").status_code == 404
+
+    done = create(client, auto_confirm_mapping="true")["id"]
+    assert _upload(client, done, b"junk").status_code == 415
+    monkeypatch.setattr(settings, "minutes_max_upload_bytes", 10)
+    assert _upload(client, done, b"x" * 11).status_code == 413

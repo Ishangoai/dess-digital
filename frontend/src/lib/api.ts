@@ -172,6 +172,80 @@ export interface DraftRun extends DraftRunSummary {
 	reconsideration?: {
 		decisions: { finding_id: string; decision: string; reason: string }[];
 	} | null;
+	edited_document: EditedDocumentSummary | null;
+}
+
+export type ChangeStatus = 'unchanged' | 'changed' | 'removed' | 'added' | 'moved';
+
+export interface TrackedChange {
+	kind: 'insertion' | 'deletion' | 'move_from' | 'move_to' | 'formatting';
+	text: string;
+	author: string | null;
+	date: string | null;
+}
+
+export interface DiffSegment {
+	op: 'equal' | 'insert' | 'delete';
+	text: string;
+}
+
+export interface ParagraphChange {
+	status: ChangeStatus;
+	section: string;
+	from_section: string | null;
+	paragraph_id: string | null;
+	heading: boolean;
+	original: string | null;
+	edited: string | null;
+	original_index: number | null;
+	edited_index: number | null;
+	matched_by: 'bookmark' | 'text' | null;
+	similarity: number | null;
+	text_changed: boolean;
+	format_only: boolean;
+	diff: DiffSegment[];
+	tracked_changes: TrackedChange[];
+	comment_ids: string[];
+}
+
+export interface CommentThread {
+	comment_id: string;
+	author: string | null;
+	date: string | null;
+	text: string;
+	question_id: string | null;
+	resolved: boolean;
+	section: string | null;
+	paragraph_id: string | null;
+	edited_index: number | null;
+	replies: { comment_id: string; author: string | null; date: string | null; text: string }[];
+}
+
+export interface Comparison {
+	counts: Record<ChangeStatus, number>;
+	sections: {
+		section: string;
+		heading: string;
+		counts: Record<ChangeStatus, number>;
+		changes: ParagraphChange[];
+	}[];
+	comments: CommentThread[];
+	tracked_change_authors: string[];
+	bookmarks_expected: number;
+	bookmarks_found: number;
+}
+
+export interface EditedDocumentSummary {
+	id: string;
+	filename: string;
+	uploaded_at: string;
+	export_id: string;
+	exported_at: string;
+	export_used_template: boolean;
+}
+
+export interface EditedDocument extends EditedDocumentSummary {
+	comparison: Comparison;
 }
 
 export interface SegmentReview {
@@ -311,6 +385,15 @@ export const api = {
 			await fetch(`/api/drafts/${id}/document`, { method: 'POST', body: form })
 		);
 		return response.blob();
+	},
+	getEdited: (id: string, f: Fetch = fetch) =>
+		json<EditedDocument>(f(`/api/drafts/${id}/edited-document`)),
+	uploadEdited: (id: string, file: File) => {
+		const form = new FormData();
+		form.append('file', file);
+		return json<EditedDocument>(
+			fetch(`/api/drafts/${id}/edited-document`, { method: 'POST', body: form })
+		);
 	},
 
 	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),

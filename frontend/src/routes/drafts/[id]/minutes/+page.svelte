@@ -70,6 +70,9 @@
 			<a class="btn sm" href={api.documentUrl(run.id)} download title="Download as a Word document">
 				<Icon name="download" size={14} /> Word
 			</a>
+			<a class="btn sm" href="/drafts/{run.id}/edits" title="Upload your edited copy to see what changed">
+				<Icon name="upload" size={14} /> {run.edited_document ? 'Edits' : 'Upload edited'}
+			</a>
 			<details class="menu" bind:this={menu}>
 				<summary class="btn sm" aria-label="More download options" title="More download options">
 					{#if exporting}<span class="spinner"></span>{:else}<Icon name="chevronDown" size={14} />{/if}

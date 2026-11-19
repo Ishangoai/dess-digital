@@ -5,7 +5,16 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, JSONType
@@ -57,6 +66,12 @@ class DraftRun(Base):
     llm_calls: Mapped[list["LLMCall"]] = relationship(
         back_populates="run", order_by="LLMCall.created_at", cascade="all, delete-orphan"
     )
+    exports: Mapped[list["ExportedDocument"]] = relationship(
+        back_populates="run", order_by="ExportedDocument.created_at", cascade="all, delete-orphan"
+    )
+    edited_documents: Mapped[list["EditedDocument"]] = relationship(
+        back_populates="run", order_by="EditedDocument.uploaded_at", cascade="all, delete-orphan"
+    )
 
 
 class DraftDocument(Base):
@@ -97,3 +112,56 @@ class LLMCall(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[DraftRun] = relationship(back_populates="llm_calls")
+
+
+class ExportedDocument(Base):
+    """A Word file exactly as it was downloaded, so an edited copy can be compared with it."""
+
+    __tablename__ = "exported_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("draft_runs.id"))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    used_template: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The DraftMinutes exported, and where its paragraphs and questions went (ExportManifest).
+    draft: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    run: Mapped[DraftRun] = relationship(back_populates="exports")
+
+
+class EditedDocument(Base):
+    """The professional's edited copy of an export."""
+
+    __tablename__ = "edited_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("draft_runs.id"))
+    export_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exported_documents.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    run: Mapped[DraftRun] = relationship(back_populates="edited_documents")
+    export: Mapped[ExportedDocument] = relationship()
+    comparison: Mapped["DocumentComparison | None"] = relationship(
+        back_populates="edited_document", cascade="all, delete-orphan"
+    )
+
+
+class DocumentComparison(Base):
+    """Edited paragraphs lined up with the export (docx_compare.Comparison as JSON)."""
+
+    __tablename__ = "document_comparisons"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    edited_document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("edited_documents.id"), unique=True
+    )
+    result: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    edited_document: Mapped[EditedDocument] = relationship(back_populates="comparison")
