@@ -65,9 +65,11 @@ The flow is: upload agenda + transcript and/or notes, review the mapping of evid
 
 ### Review and learning
 
-On the minutes page a reviewer can approve the draft, request a revision (with a reason), or edit the Word file and upload the final copy. The upload is matched back to the draft by the run id and bookmarks in the exported file and compared item by item. Every piece of feedback earns a reward from 0 to 1 (approve 1, revise 0, edited copy = share of the draft kept); **Draft scores** ranks each profile version and model by it.
+On the minutes page a reviewer can approve the draft, request a revision (with a reason), or edit the Word file and upload it back. Every download is stored exactly (`exported_documents`); its paragraphs carry hidden bookmark ids, so an uploaded copy is lined up with the download it came from paragraph by paragraph (unchanged, changed, removed, added or moved), with tracked changes, comments and replies to the clarification questions kept. The **Edits** page shows it side by side with word-level differences (DESS-050).
 
-Learning is per organisation: create an organisation profile (Minutes profiles page) based on the DESS Standard and draft that organisation's meetings with it. Its reviewers' final copies are shown to later drafts as house examples, and **Propose lessons from feedback** turns their edits, comments and revision reasons into a proposed profile version with house lessons. Nothing changes until a person confirms it. Before confirming, check the candidate against past finals:
+**Classify edits** then labels each edit by kind, dimension (MP1 to WS6) and cause, in code for cheap cases (formatting, dates, capitals, a name replaced by a role) and with one model call per agenda item for the rest, and groups repeated edits into one finding with a count (DESS-051). The cause decides where an edit goes: misread evidence and "profile not applied" are the draft's defects (test cases, no profile change); "the profile is silent or says otherwise" is a candidate for an amendment proposal; one-off choices stay with the meeting. Nothing changes the profile from here.
+
+Every piece of feedback also earns a reward from 0 to 1 (approve 1, revise 0, edited copy = share of the draft kept); **Draft scores** ranks each profile version and model by it. An organisation profile (Minutes profiles page) keeps one organisation's feedback to itself: its reviewers' final copies are shown to later drafts as house examples. To check a new profile version against past finals before confirming it:
 
 ```bash
 uv run python -m evals.replay --profile <org-slug> --version <n> --limit 3 --out ../reference/replay
@@ -112,7 +114,7 @@ Push to `development`: `.github/workflows/deploy.yml` builds both images, pushes
 GitHub `development` environment needs:
 
 - secrets: `GCP_PROJECT_NAME`, `GCP_PROJECT_NUMBER`, `POSTGRES_PASSWORD`, `LLM_API_KEY` (not needed for `vertex` / `anthropic_vertex`)
-- vars: `LLM_PROVIDER` (`openai` | `azure` | `gemini` | `vertex` | `anthropic` | `anthropic_vertex`), `LLM_MODEL`, `GCP_LOCATION` (optional, default `global`), `AZURE_ENDPOINT` (azure only), `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
+- vars: `LLM_PROVIDER` (`openai` | `azure` | `gemini` | `vertex` | `anthropic` | `anthropic_vertex`), `LLM_MODEL`, `GCP_LOCATION` (optional, default `global`), `AZURE_ENDPOINT` (azure only), `MINUTES_PARALLEL_CALLS` (optional, default 4; per-item calls run at once, raise it for slow models), `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
 
 LLM calls go through `backend/app/llm`. The team default is `LLM_PROVIDER=gemini` with an AI Studio key.
 

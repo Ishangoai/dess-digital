@@ -73,6 +73,7 @@ jobs:
           SITE_ADDRESS=${{ vars.SITE_ADDRESS }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           MINUTES_ROUTES=${{ vars.MINUTES_ROUTES || 'false' }}
+          MINUTES_PARALLEL_CALLS=${{ vars.MINUTES_PARALLEL_CALLS || '4' }}
           LLM_PROVIDER=${{ vars.LLM_PROVIDER }}
           LLM_MODEL=${{ vars.LLM_MODEL }}
           LLM_API_KEY=${{ secrets.LLM_API_KEY }}
