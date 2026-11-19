@@ -13,6 +13,7 @@ from docx.text.paragraph import Paragraph
 from app.minutes.alignment import Alignment, align, word_diff
 from app.minutes.docx_export import RenderedDocx, bookmark_name, render_for_review
 from app.minutes.docx_read import W14, W15, read_docx
+from app.minutes.llm_schemas import ActionEntry
 from app.minutes.profile_content import PresentationSettings
 from app.minutes.roundtrip import summarise
 from tests import minutes_samples as samples
@@ -178,6 +179,100 @@ def test_a_reply_to_a_question_is_linked_to_it() -> None:
     assert question.anchor == "phase one only"
     assert reply.parent_id == question.id
     assert reply.text == "The Company Secretary will write."
+
+
+def retyped(heading_style: str | None) -> Document:
+    """The draft retyped into a brand-new document: no hidden ids, no file id."""
+    doc = docx.Document()
+    for item in DRAFT.items:
+        heading = doc.add_paragraph(f"{item.item_ref}. {item.heading}")
+        if heading_style:
+            heading.style = heading_style
+        else:
+            heading.runs[0].bold = True  # a heading typed as bold text
+        for paragraph in item.paragraphs:
+            doc.add_paragraph(paragraph.text)
+    return doc
+
+
+def test_a_new_document_with_bold_text_headings() -> None:
+    rendered, _ = exported()
+    doc = retyped(heading_style=None)
+    para(doc, "The Board noted the report.").runs[
+        0
+    ].text = "The Board noted the report with thanks."
+
+    alignment = lined_up(rendered, doc)
+
+    report = next(r for r in alignment.paragraphs if r.paragraph_id == "3.p1")
+    assert (report.status, report.item_ref) == ("changed", "3")
+    roof = next(r for r in alignment.paragraphs if r.paragraph_id == "4.p1")
+    assert (roof.status, roof.item_ref) == ("unchanged", "4")
+    assert not [s for s in alignment.sections if s.added]
+
+
+def test_a_paragraph_rewritten_in_place_is_changed_not_removed_and_added() -> None:
+    rendered, _ = exported()
+    doc = retyped(heading_style="Heading 1")
+    concern = para(doc, "Priya Shah remained concerned")
+    concern.runs[0].text = "One director said the contingency was too thin for this programme."
+
+    alignment = lined_up(rendered, doc)
+
+    row = next(r for r in alignment.paragraphs if r.paragraph_id == "4.p1")
+    assert row.status == "changed"
+    assert row.final_text.startswith("One director said the contingency")
+    items = [r for r in alignment.paragraphs if r.item_ref != "header"]  # header not retyped
+    assert not [r for r in items if r.status in ("added", "removed")]
+
+
+def test_a_rewrite_followed_by_new_paragraphs_is_still_matched() -> None:
+    rendered, _ = exported()
+    doc = retyped(heading_style="Heading 1")
+    roof = para(doc, "The Board approved phase one only")
+    roof.runs[0].text = "It was resolved that phase one only be approved, capped at £1.2 million."
+    for text in ["Action: the Finance Director to sign.", "Action: tenants to be told."]:
+        new = doc.add_paragraph(text)
+        roof._p.addnext(new._p)
+
+    alignment = lined_up(rendered, doc)
+
+    row = next(r for r in alignment.paragraphs if r.paragraph_id == "4.p2")
+    assert row.status == "changed" and row.final_text.startswith("It was resolved")
+    added = [r.final_text for r in alignment.paragraphs if r.status == "added"]
+    assert sorted(added) == ["Action: tenants to be told.", "Action: the Finance Director to sign."]
+
+
+def test_the_actions_table_is_compared_row_by_row() -> None:
+    draft = DRAFT.model_copy(deep=True)
+    draft.actions = [
+        ActionEntry(
+            action_id="4.AC1",
+            text="Write to tenants about the roof works",
+            owner=None,
+            due=None,
+            paragraph_id="4.p2",
+        ),
+    ]
+    settings = SETTINGS.model_copy(update={"action_presentation": "inline_and_table"})
+    rendered = render_for_review(draft, settings, run_id="run-1", export_id="exp-1")
+    doc = docx.Document(io.BytesIO(rendered.data))
+    table = doc.tables[0]
+    table.rows[1].cells[1].text = "Company Secretary"
+    added = table.add_row().cells
+    added[0].text, added[1].text = "Brief the auditors on the contract", "Finance Director"
+
+    alignment = lined_up(rendered, doc)
+
+    rows = [r for r in alignment.paragraphs if r.item_ref == "actions" and r.role != "heading"]
+    assert [(r.status, r.final_text) for r in rows] == [
+        ("unchanged", "Action | Owner | Due"),
+        ("changed", "Write to tenants about the roof works | Company Secretary |"),
+        ("added", "Brief the auditors on the contract | Finance Director |"),
+    ]
+    assert rows[1].role == "action"
+    summary = summarise(alignment, [], "run-1")
+    assert next(i for i in summary.items if i.item_ref == "actions").status == "edited"
 
 
 def test_word_diff_keeps_spaces_and_punctuation() -> None:

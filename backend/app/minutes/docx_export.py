@@ -105,7 +105,8 @@ class _Writer:
         self.title_runs: list[Run] = []
         self.heading_runs: dict[str, list[Run]] = {}
         self.section = "header"
-        self.written: list[tuple[Paragraph, str, str | None]] = []  # paragraph, role, draft id
+        # paragraph, "section|role", draft paragraph id, text (set for table rows)
+        self.written: list[tuple[Paragraph, str, str | None, str | None]] = []
         if template:
             self.marker = next((p for p in self.doc.paragraphs if p.text.strip() == MARKER), None)
             if self.marker is None:
@@ -226,6 +227,7 @@ class _Writer:
         for a in draft.actions:
             row = table.add_row().cells
             row[0].text, row[1].text, row[2].text = a.text, a.owner or "", a.due or ""
+            self._mark(row[0].paragraphs[0], "action", a.paragraph_id, row_text(row))
         if self.marker is not None:
             self.marker._p.addprevious(table._tbl)
 
@@ -245,17 +247,23 @@ class _Writer:
         para.style = style if style in _style_names(self.doc) else "Normal"
         if self.marker is not None:
             self.marker._p.addprevious(para._p)
+        self._mark(para, role, paragraph_id)
+        return para
+
+    def _mark(
+        self, para: Paragraph, role: str, paragraph_id: str | None, text: str | None = None
+    ) -> None:
+        """A hidden bookmark, so the paragraph (or table row) can be found in an edited copy."""
         n = len(self.written) + 1
         _bookmark(para, PARAGRAPH_ID_BASE + n, f"{PARAGRAPH_BOOKMARK}{n}")
-        self.written.append((para, f"{self.section}|{role}", paragraph_id))
-        return para
+        self.written.append((para, f"{self.section}|{role}", paragraph_id, text))
 
     def marks(self) -> list[ParagraphMark]:
         """Every paragraph written, with its final text (runs are added after _para)."""
         out = []
-        for n, (para, where, paragraph_id) in enumerate(self.written, 1):
+        for n, (para, where, paragraph_id, text) in enumerate(self.written, 1):
             section, role = where.split("|", 1)
-            out.append(ParagraphMark(n, section, role, paragraph_id, para.text))
+            out.append(ParagraphMark(n, section, role, paragraph_id, text or para.text))
         return out
 
     def _comment(self, runs: list[Run], q: ClarificationQuestion) -> None:
@@ -273,6 +281,17 @@ class _Writer:
         for child in list(body):
             if not child.tag.endswith("}sectPr"):  # keep page setup, headers and footers
                 body.remove(child)
+
+
+def row_text(cells: Any) -> str:
+    """A table row as one line, the same way docx_read.py reads it back."""
+    seen, parts = set(), []
+    for cell in cells:
+        if id(cell._tc) in seen:  # a merged cell repeats across the row
+            continue
+        seen.add(id(cell._tc))
+        parts.append(cell.text.strip())
+    return " | ".join(parts).strip()
 
 
 def bookmark_name(item_ref: str) -> str:

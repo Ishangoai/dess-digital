@@ -6,11 +6,13 @@ evidence of what the professional did and said.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from docx.document import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import parse_xml
 from docx.oxml.ns import qn
+from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from app.minutes.docx_export import BOOKMARK_PREFIX, PARAGRAPH_BOOKMARK, read_identifier
@@ -40,6 +42,7 @@ class DocParagraph:
     is_heading: bool
     tracked: list[TrackedChange] = field(default_factory=list)
     comment_ids: list[str] = field(default_factory=list)
+    in_table: bool = False  # a table row, read as one line: "cell | cell | cell"
 
 
 @dataclass(frozen=True)
@@ -66,8 +69,17 @@ def read_docx(data: bytes, item_refs: dict[str, str] | None = None) -> ParsedDoc
     run_id, export_id = read_identifier(doc.core_properties.identifier)
     paragraphs: list[DocParagraph] = []
     anchors: dict[str, tuple[int, str]] = {}
-    for p in doc.paragraphs:
-        para, found = _paragraph(len(paragraphs), p, item_refs or {})
+    for child in doc.element.body.iterchildren():  # paragraphs and tables, in document order
+        if child.tag == qn("w:p"):
+            para, found = _paragraph(len(paragraphs), Paragraph(child, doc), item_refs or {})
+        elif child.tag == qn("w:tbl"):
+            for row in Table(child, doc).rows:
+                para, found = _row(len(paragraphs), row.cells, item_refs or {})
+                paragraphs.append(para)
+                anchors.update(found)
+            continue
+        else:
+            continue
         paragraphs.append(para)
         anchors.update(found)
     for para in paragraphs:
@@ -128,6 +140,41 @@ def _paragraph(
         tracked=tracked,
     )
     return para, anchors
+
+
+def _row(
+    index: int, cells: Any, item_refs: dict[str, str]
+) -> tuple[DocParagraph, dict[str, tuple[int, str]]]:
+    """A table row as one line; merged cells, which repeat across the row, count once."""
+    seen, texts, befores = set(), [], []
+    marks: list[int] = []
+    tracked: list[TrackedChange] = []
+    anchors: dict[str, tuple[int, str]] = {}
+    for cell in cells:
+        if id(cell._tc) in seen:
+            continue
+        seen.add(id(cell._tc))
+        parts, before = [], []
+        for p in cell.paragraphs:
+            para, found = _paragraph(index, p, item_refs)
+            parts.append(para.text)
+            before.append(para.before_tracking)
+            marks += para.marks
+            tracked += para.tracked
+            anchors.update(found)
+        texts.append("\n".join(parts).strip())
+        befores.append("\n".join(before).strip())
+    row = DocParagraph(
+        index=index,
+        text=" | ".join(texts).strip(),
+        before_tracking=" | ".join(befores).strip(),
+        marks=marks,
+        item_ref=None,
+        is_heading=False,
+        tracked=tracked,
+        in_table=True,
+    )
+    return row, anchors
 
 
 def _comments(doc: Document, anchors: dict[str, tuple[int, str]]) -> list[DocComment]:

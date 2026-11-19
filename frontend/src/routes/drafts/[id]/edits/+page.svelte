@@ -187,7 +187,7 @@
 			{#if !onlyChanges || s.changed}
 				<section class="card item">
 					<h3>
-						{s.item_ref === 'header' ? 'Header' : s.added ? s.heading : `${s.item_ref}. ${s.heading}`}
+						{s.item_ref === 'header' || s.item_ref === 'actions' || s.added ? s.heading : `${s.item_ref}. ${s.heading}`}
 						{#if s.added}<span class="status added">added by the reviewer</span>{/if}
 					</h3>
 					<div class="grid head tiny muted"><span>Draft</span><span>Edited copy</span></div>

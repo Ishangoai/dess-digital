@@ -57,9 +57,8 @@ def summarise(
     rows = alignment.paragraphs
     changes = []
     for s in alignment.sections:
-        if s.item_ref == "actions":
-            continue
-        roles = {"title", "header", "body"} if s.item_ref == "header" else {"body"}
+        # Everything but headings: an item's text includes any table in it, e.g. the actions.
+        roles = {"title", "header", "body", "table", "action"}
         before = [
             r.original_text for r in rows if r.original_item_ref == s.item_ref and r.role in roles
         ]
