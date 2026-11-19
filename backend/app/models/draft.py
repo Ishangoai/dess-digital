@@ -152,6 +152,13 @@ class EditedDocument(Base):
     )
 
 
+class ClassificationStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"  # some or all items could not be classified
+
+
 class DocumentComparison(Base):
     """Edited paragraphs lined up with the export (docx_compare.Comparison as JSON)."""
 
@@ -163,5 +170,12 @@ class DocumentComparison(Base):
     )
     result: Mapped[dict[str, Any]] = mapped_column(JSONType)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # What each edit was and why (edit_review.EditClassificationResult as JSON).
+    classification: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    classification_status: Mapped[ClassificationStatus | None] = mapped_column(
+        str_enum(ClassificationStatus)
+    )
+    classification_error: Mapped[str | None] = mapped_column(Text)
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     edited_document: Mapped[EditedDocument] = relationship(back_populates="comparison")

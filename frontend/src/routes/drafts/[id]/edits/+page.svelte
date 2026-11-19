@@ -1,13 +1,19 @@
 <script lang="ts">
+	import { onMount, tick } from 'svelte';
 	import { invalidate } from '$app/navigation';
 	import {
 		api,
+		EDIT_CAUSE_LABELS,
+		EDIT_KIND_LABELS,
+		EDIT_ROUTES,
 		errorText,
 		formatDay,
+		lineRef,
 		plural,
 		type ChangeStatus,
 		type CommentThread,
 		type DiffSegment,
+		type EditRoute,
 		type ParagraphChange
 	} from '#lib/api.ts';
 	import FileDrop from '#lib/components/FileDrop.svelte';
@@ -45,6 +51,49 @@
 			.map((s) => ({ ...s, shown: s.changes.filter((c) => showUnchanged || c.status !== 'unchanged') }))
 			.filter((s) => s.shown.length)
 	);
+
+	const classification = $derived(edited?.classification ?? null);
+	const status = $derived(edited?.classification_status ?? null);
+	const explaining = $derived(status === 'pending' || status === 'running');
+	const labels = $derived(new Map((classification?.changes ?? []).map((c) => [c.change_id, c])));
+	const ROUTE_ORDER: EditRoute[] = ['candidate_rule', 'draft_mistake', 'meeting_only'];
+	const groups = $derived(
+		ROUTE_ORDER.map((route) => ({
+			route,
+			patterns: (classification?.patterns ?? []).filter((p) => p.route === route)
+		})).filter((g) => g.patterns.length)
+	);
+	let requesting = $state(false);
+
+	onMount(() => {
+		// The edits are explained in the background; refresh until that settles.
+		const timer = window.setInterval(async () => {
+			if (!explaining) return;
+			await invalidate('app:edits');
+			if (!explaining) await invalidate('app:run');
+		}, 3000);
+		return () => window.clearInterval(timer);
+	});
+
+	async function explain() {
+		requesting = true;
+		uploadError = '';
+		try {
+			await api.classifyEdits(run.id);
+			await invalidate('app:edits');
+		} catch (e) {
+			uploadError = errorText(e);
+		} finally {
+			requesting = false;
+		}
+	}
+
+	async function jump(changeId: string) {
+		const target = comparison?.sections.flatMap((s) => s.changes).find((c) => c.change_id === changeId);
+		if (target?.status === 'unchanged') showUnchanged = true;
+		await tick();
+		document.getElementById(`change-${changeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	}
 
 	async function upload(file: File | undefined) {
 		if (!file) return;
@@ -166,6 +215,60 @@
 		{#if uploadError}<p class="alert error small">{uploadError}</p>{/if}
 	</section>
 
+	<section class="card stack tight">
+		<div class="row">
+			<h3 class="grow">What the edits mean</h3>
+			{#if !explaining && (status === null || status === 'failed')}
+				<button class="btn sm" onclick={explain} disabled={requesting}>
+					{#if requesting}<span class="spinner"></span>{:else}<Icon name="refresh" size={14} />{/if}
+					{status === null ? 'Explain the edits' : 'Try again'}
+				</button>
+			{/if}
+		</div>
+		{#if explaining}
+			<p class="small muted row tight">
+				<span class="spinner"></span> Explaining each edit against the Minutes Profile, one agenda item at a time.
+			</p>
+		{:else if status === null}
+			<p class="small muted">The edits have not been explained yet.</p>
+		{/if}
+		{#if status === 'failed' && edited.classification_error}
+			<p class="alert error small">Some items could not be explained. {edited.classification_error}</p>
+		{/if}
+		{#if status === 'completed' && !groups.length}
+			<p class="small muted">There were no edits to explain.</p>
+		{/if}
+		{#each groups as g (g.route)}
+			<div class="route">
+				<div class="route-head">
+					<span class="eyebrow route-{g.route}">{EDIT_ROUTES[g.route].title}</span>
+					<p class="tiny muted">{EDIT_ROUTES[g.route].hint}</p>
+				</div>
+				<ul class="patterns">
+					{#each g.patterns as p (p.pattern_id)}
+						<li>
+							<div class="row tight">
+								<span class="chip">{p.dimension} {p.dimension_title}</span>
+								<span class="small">{EDIT_KIND_LABELS[p.kind]}</span>
+								{#if p.count > 1}<span class="chip times">{p.count} times</span>{/if}
+							</div>
+							{#each p.reasons.slice(0, 3) as reason, i (i)}<p class="small">{reason}</p>{/each}
+							{#if p.reasons.length > 3}<p class="tiny muted">and {p.reasons.length - 3} more</p>{/if}
+							<p class="tiny refs">
+								{#each p.change_ids as id, i (id)}
+									<button class="link-btn tiny" onclick={() => jump(id)}>{p.paragraph_ids[i]}</button>
+								{/each}
+							</p>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/each}
+		{#if classification?.unclassified.length}
+			<p class="tiny muted">{plural(classification.unclassified.length, 'edit')} could not be explained.</p>
+		{/if}
+	</section>
+
 	{#if answered.length || otherComments.length}
 		<section class="card stack tight">
 			<h3>Comments in the edited file</h3>
@@ -186,7 +289,8 @@
 				</span>
 			</header>
 			{#each s.shown as c, i (i)}
-				<article class="change status-{c.status}">
+				{@const k = labels.get(c.change_id)}
+				<article class="change status-{c.status}" id="change-{c.change_id}">
 					<div class="change-meta row tight">
 						<span class="chip status-{c.status}">{c.heading ? `Heading ${LABELS[c.status].toLowerCase()}` : LABELS[c.status]}</span>
 						{#if c.status === 'moved'}<span class="tiny muted">{movedNote(c)}{c.text_changed ? ', and reworded' : ''}</span>{/if}
@@ -219,6 +323,24 @@
 									<p class="minute">{@render text(side(c.diff, 'insert'))}</p>
 								{/if}
 							</div>
+						</div>
+					{/if}
+					{#if k}
+						<div class="explain">
+							<div class="row tight">
+								<span class="chip route-{k.route}">{EDIT_CAUSE_LABELS[k.cause]}</span>
+								<span class="chip">{k.dimension} {k.dimension_title}</span>
+								<span class="tiny muted">{EDIT_KIND_LABELS[k.kind]}{k.decided_by === 'rule' ? ', settled by rule' : ''}</span>
+							</div>
+							<p class="small">{k.reason}</p>
+							{#if k.profile_text}<p class="tiny muted">Profile: "{k.profile_text}"</p>{/if}
+							{#if k.kind === 'content_added'}
+								<p class="tiny muted">
+									{k.support === 'transcript'
+										? `Supported by the evidence at ${k.support_refs.map(lineRef).join(', ') || 'the item'}`
+										: "Not in the evidence: from the professional's own knowledge"}
+								</p>
+							{/if}
 						</div>
 					{/if}
 					{#if c.tracked_changes.length}<p class="tiny muted">{trackedSummary(c)}</p>{/if}
@@ -356,6 +478,73 @@
 		color: var(--err-fg);
 		border-radius: 3px;
 		padding: 0 0.1rem;
+	}
+
+	.route {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		padding-top: 0.6rem;
+		border-top: 1px solid var(--border);
+	}
+
+	.route-head {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+	}
+
+	.patterns {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.7rem;
+	}
+
+	.patterns li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.refs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.chip.times {
+		background: var(--surface);
+		font-weight: 600;
+	}
+
+	.eyebrow.route-candidate_rule {
+		color: var(--accent);
+	}
+
+	.eyebrow.route-draft_mistake {
+		color: var(--warn-fg);
+	}
+
+	.chip.route-candidate_rule {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.chip.route-draft_mistake {
+		background: var(--warn-bg);
+		color: var(--warn-fg);
+	}
+
+	.explain {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		padding: 0.6rem 0.75rem;
+		background: var(--surface-2);
+		border-radius: var(--radius-sm);
 	}
 
 	.thread {

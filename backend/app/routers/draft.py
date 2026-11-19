@@ -46,6 +46,16 @@ def llm_client() -> LLMClient:
 LLM = Annotated[LLMClient, Depends(llm_client)]
 
 
+def optional_llm_client() -> LLMClient | None:
+    try:
+        return get_llm_client()
+    except ValueError:
+        return None
+
+
+OptionalLLM = Annotated[LLMClient | None, Depends(optional_llm_client)]
+
+
 def _run(db: Session, run_id: uuid.UUID) -> DraftRun:
     try:
         return svc.get_run(db, run_id)
@@ -239,9 +249,15 @@ async def _read_limited(file: UploadFile, what: str) -> bytes:
 async def upload_edited_document(
     run_id: uuid.UUID,
     db: DB,
+    llm: OptionalLLM,
+    tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(description="The edited minutes (.docx)")],
 ) -> EditedDocumentOut:
-    """Upload the minutes as edited in Word and compare them with the downloaded draft."""
+    """Upload the minutes as edited in Word and compare them with the downloaded draft.
+
+    If an LLM is configured, the edits are then explained after the response; poll
+    GET /api/drafts/{id}/edited-document until classification_status is completed or failed.
+    """
     run = _run(db, run_id)
     data = await _read_limited(file, file.filename or "the file")
     try:
@@ -250,6 +266,22 @@ async def upload_edited_document(
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     except UnsupportedFileError as e:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
+    if llm is not None and edits_svc.request_classification(db, document):
+        tasks.add_task(edits_svc.classify_in_background, db.get_bind(), document.id, llm)
+    return EditedDocumentOut.of(document)
+
+
+@router.post("/{run_id}/edited-document/classify", status_code=status.HTTP_202_ACCEPTED)
+def classify_edits(
+    run_id: uuid.UUID, db: DB, llm: LLM, tasks: BackgroundTasks
+) -> EditedDocumentOut:
+    """Explain the latest edited copy's changes again (for example after a failure)."""
+    document = edits_svc.latest_edited(_run(db, run_id))
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no edited minutes uploaded yet")
+    if not edits_svc.request_classification(db, document):
+        raise HTTPException(status.HTTP_409_CONFLICT, "the edits are already being explained")
+    tasks.add_task(edits_svc.classify_in_background, db.get_bind(), document.id, llm)
     return EditedDocumentOut.of(document)
 
 

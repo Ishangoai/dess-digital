@@ -190,6 +190,7 @@ export interface DiffSegment {
 }
 
 export interface ParagraphChange {
+	change_id: string;
 	status: ChangeStatus;
 	section: string;
 	from_section: string | null;
@@ -244,9 +245,92 @@ export interface EditedDocumentSummary {
 	export_used_template: boolean;
 }
 
+export type EditKind =
+	| 'factual_correction'
+	| 'content_added'
+	| 'content_removed'
+	| 'wording_or_style'
+	| 'structure';
+export type EditCause =
+	| 'evidence_misread'
+	| 'profile_not_applied'
+	| 'profile_silent_or_different'
+	| 'meeting_specific';
+export type EditRoute = 'draft_mistake' | 'meeting_only' | 'candidate_rule';
+
+export interface ClassifiedChange {
+	change_id: string;
+	section: string;
+	paragraph_id: string | null;
+	kind: EditKind;
+	dimension: string;
+	dimension_title: string;
+	cause: EditCause;
+	route: EditRoute;
+	support: 'transcript' | 'professional_knowledge' | 'not_applicable';
+	support_refs: LineRef[];
+	profile_text: string | null;
+	reason: string;
+	decided_by: 'rule' | 'model';
+	rule: string | null;
+}
+
+export interface EditPattern {
+	pattern_id: string;
+	kind: EditKind;
+	dimension: string;
+	dimension_title: string;
+	cause: EditCause;
+	route: EditRoute;
+	count: number;
+	change_ids: string[];
+	paragraph_ids: string[];
+	reasons: string[];
+}
+
+export interface EditClassification {
+	changes: ClassifiedChange[];
+	patterns: EditPattern[];
+	unclassified: string[];
+}
+
 export interface EditedDocument extends EditedDocumentSummary {
 	comparison: Comparison;
+	classification_status: 'pending' | 'running' | 'completed' | 'failed' | null;
+	classification_error: string | null;
+	classified_at: string | null;
+	classification: EditClassification | null;
 }
+
+export const EDIT_KIND_LABELS: Record<EditKind, string> = {
+	factual_correction: 'Factual correction',
+	content_added: 'Content added',
+	content_removed: 'Content removed',
+	wording_or_style: 'Wording or style',
+	structure: 'Structure'
+};
+
+export const EDIT_CAUSE_LABELS: Record<EditCause, string> = {
+	evidence_misread: 'Evidence misread',
+	profile_not_applied: 'Profile not applied',
+	profile_silent_or_different: 'Possible new rule',
+	meeting_specific: 'This meeting only'
+};
+
+export const EDIT_ROUTES: Record<EditRoute, { title: string; hint: string }> = {
+	draft_mistake: {
+		title: 'Draft mistakes',
+		hint: 'The profile already covered these, or the evidence was misread. The draft got them wrong; no rule needs changing.'
+	},
+	meeting_only: {
+		title: 'This meeting only',
+		hint: 'Corrections that only apply to this meeting. Recorded, not carried forward.'
+	},
+	candidate_rule: {
+		title: 'Possible rule changes',
+		hint: 'The profile is silent here or says something different. These can become suggested changes for you to confirm.'
+	}
+};
 
 export interface SegmentReview {
 	segment_id: string;
@@ -388,6 +472,8 @@ export const api = {
 	},
 	getEdited: (id: string, f: Fetch = fetch) =>
 		json<EditedDocument>(f(`/api/drafts/${id}/edited-document`)),
+	classifyEdits: (id: string) =>
+		json<EditedDocument>(post(`/api/drafts/${id}/edited-document/classify`)),
 	uploadEdited: (id: string, file: File) => {
 		const form = new FormData();
 		form.append('file', file);
@@ -496,6 +582,10 @@ export const STAGE_INFO: Record<string, { label: string; about: string }> = {
 	validation: {
 		label: 'Check the draft',
 		about: 'Independently checks the draft and questions against the evidence and the profile.'
+	},
+	edit_review: {
+		label: 'Explain the edits',
+		about: "Explains each of the professional's edits for one agenda item and sorts it by cause."
 	},
 	reconsideration: {
 		label: 'Reconsider',

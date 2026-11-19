@@ -360,6 +360,7 @@ class DiffSegment(BaseModel):
 
 
 class ParagraphChange(BaseModel):
+    change_id: str = ""  # C1, C2 ... in display order
     status: Status
     section: str
     from_section: str | None = None  # where a moved paragraph was
@@ -491,6 +492,9 @@ def compare(original: ReadDocument, edited: ReadDocument, manifest: ExportManife
                     changes=mine,
                 )
             )
+
+    for n, c in enumerate((c for s in sections for c in s.changes), 1):
+        c.change_id = f"C{n}"
 
     expected = {pid for o in orig for pid in o.paragraph_ids}
     found = {pid for e in ed for pid in e.paragraph_ids}

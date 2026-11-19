@@ -26,7 +26,9 @@ FIXTURES = Path(__file__).parent / "fixtures" / "minutes"
 
 @pytest.fixture
 def provider() -> ScriptedProvider:
-    return ScriptedProvider(samples.all_stage_outputs())
+    return ScriptedProvider(
+        {**samples.all_stage_outputs(), "EditReview": samples.fake_edit_review()}
+    )
 
 
 @pytest.fixture
@@ -46,6 +48,10 @@ def client(
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[draft_routes.llm_client] = lambda: LLMClient(provider, "fake-model")
+    # Never reach a real model, even where one is configured.
+    app.dependency_overrides[draft_routes.optional_llm_client] = lambda: LLMClient(
+        provider, "fake-model"
+    )
     return TestClient(app)
 
 
@@ -397,3 +403,64 @@ def test_upload_errors(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> N
     assert _upload(client, done, b"junk").status_code == 415
     monkeypatch.setattr(settings, "minutes_max_upload_bytes", 10)
     assert _upload(client, done, b"x" * 11).status_code == 413
+
+
+def test_edits_are_explained_after_upload(client: TestClient, provider: ScriptedProvider) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+    _upload(client, run_id, _edited(original))  # the background task runs before this returns
+
+    body = client.get(f"/api/drafts/{run_id}/edited-document").json()
+    assert body["classification_status"] == "completed"
+    [classified] = body["classification"]["changes"]
+    assert (classified["paragraph_id"], classified["decided_by"]) == ("3.p1", "model")
+    assert classified["route"] == "candidate_rule"
+    [pattern] = body["classification"]["patterns"]
+    assert (pattern["dimension"], pattern["count"]) == ("WS5", 1)
+
+    calls = client.get(f"/api/drafts/{run_id}/calls").json()
+    assert [c["stage"] for c in calls].count("edit_review") == 1
+    assert "Draft: The Board noted the report." in calls[-1]["prompt"]
+    assert "Edited: The Board noted the report and thanked the team." in calls[-1]["prompt"]
+
+
+def test_failed_explanation_can_be_retried(client: TestClient, provider: ScriptedProvider) -> None:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+    provider.responses["EditReview"] = LLMProviderError("model unavailable")
+    _upload(client, run_id, _edited(original))
+
+    failed = client.get(f"/api/drafts/{run_id}/edited-document").json()
+    assert failed["classification_status"] == "failed"
+    assert "model unavailable" in failed["classification_error"]
+    assert len(failed["classification"]["unclassified"]) == 1
+
+    provider.responses["EditReview"] = samples.fake_edit_review()
+    assert client.post(f"/api/drafts/{run_id}/edited-document/classify").status_code == 202
+    retried = client.get(f"/api/drafts/{run_id}/edited-document").json()
+    assert retried["classification_status"] == "completed"
+    assert retried["classification"]["unclassified"] == []
+
+
+def test_upload_without_an_llm_only_compares(
+    session_factory: sessionmaker[Session], db: Session, profile_content: ProfileContent
+) -> None:
+    profile_svc.seed_profile(db, profile_content, slug="dess-standard", confirm_version=True)
+    provider = ScriptedProvider(samples.all_stage_outputs())
+    app = FastAPI()
+    app.include_router(draft_routes.router, prefix="/api")
+
+    def override_db() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[draft_routes.llm_client] = lambda: LLMClient(provider, "fake-model")
+    app.dependency_overrides[draft_routes.optional_llm_client] = lambda: None
+    client = TestClient(app)
+
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+    body = _upload(client, run_id, _edited(original)).json()
+    assert body["classification_status"] is None
+    assert "EditReview" not in provider.schemas_called()
