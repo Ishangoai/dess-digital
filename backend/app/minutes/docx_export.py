@@ -2,11 +2,15 @@
 
 import io
 import logging
+import re
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 import docx
 from docx.document import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Pt
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
@@ -30,17 +34,67 @@ from app.minutes.profile_content import (
 log = logging.getLogger("app.minutes")
 
 MARKER = "{{MINUTES}}"
+# Let an edited copy be matched back to its export, items and paragraphs (see docx_read.py).
+RUN_PREFIX = "dess-run:"
+EXPORT_PART = ";export:"
+BOOKMARK_PREFIX = "dess_item_"
+PARAGRAPH_BOOKMARK = "_dess_p_"  # a leading underscore hides the bookmark in Word
+BOOKMARK_ID_BASE = 90_000  # clear of any bookmarks a template already has
+PARAGRAPH_ID_BASE = 91_000
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
+@dataclass(frozen=True)
+class ParagraphMark:
+    """One paragraph we wrote, found again in an edited copy by its hidden bookmark."""
+
+    n: int
+    section: str  # "header", an item ref, or "actions"
+    role: str  # title, header, heading or body
+    paragraph_id: str | None  # the draft paragraph, for body paragraphs
+    text: str
+
+
+@dataclass(frozen=True)
+class RenderedDocx:
+    data: bytes
+    marks: list[ParagraphMark]
+
+
 def render_minutes_docx(
-    draft: DraftMinutes, presentation: PresentationSettings, template: bytes | None = None
+    draft: DraftMinutes,
+    presentation: PresentationSettings,
+    template: bytes | None = None,
+    run_id: str | None = None,
+    export_id: str | None = None,
 ) -> bytes:
+    return render_for_review(draft, presentation, template, run_id, export_id).data
+
+
+def render_for_review(
+    draft: DraftMinutes,
+    presentation: PresentationSettings,
+    template: bytes | None = None,
+    run_id: str | None = None,
+    export_id: str | None = None,
+) -> RenderedDocx:
+    """The Word draft, plus the hidden paragraph ids that let an edited copy be lined up."""
     writer = _Writer(presentation, template)
     writer.write(draft)
+    if run_id:
+        ident = f"{RUN_PREFIX}{run_id}" + (f"{EXPORT_PART}{export_id}" if export_id else "")
+        writer.doc.core_properties.identifier = ident
     buffer = io.BytesIO()
     writer.doc.save(buffer)
-    return buffer.getvalue()
+    return RenderedDocx(buffer.getvalue(), writer.marks())
+
+
+def read_identifier(identifier: str | None) -> tuple[str | None, str | None]:
+    """(run id, export id) from a document's identifier property."""
+    if not identifier or not identifier.startswith(RUN_PREFIX):
+        return None, None
+    run, _, export = identifier.removeprefix(RUN_PREFIX).partition(EXPORT_PART)
+    return run or None, export or None
 
 
 class _Writer:
@@ -50,6 +104,8 @@ class _Writer:
         self.marker: Paragraph | None = None
         self.title_runs: list[Run] = []
         self.heading_runs: dict[str, list[Run]] = {}
+        self.section = "header"
+        self.written: list[tuple[Paragraph, str, str | None]] = []  # paragraph, role, draft id
         if template:
             self.marker = next((p for p in self.doc.paragraphs if p.text.strip() == MARKER), None)
             if self.marker is None:
@@ -63,13 +119,15 @@ class _Writer:
 
     def write(self, draft: DraftMinutes) -> None:
         h = draft.header
-        self.title_runs = self._para(h.title, self.p.styles.title).runs
+        self.title_runs = self._para(h.title, self.p.styles.title, role="title").runs
         if self.p.status_label:
-            self._para(self.p.status_label, self.p.styles.body)
+            self._para(self.p.status_label, self.p.styles.body, role="header")
         if h.meeting_date:
-            self._para(_format_date(h.meeting_date, self.p.date_style), self.p.styles.body)
+            self._para(
+                _format_date(h.meeting_date, self.p.date_style), self.p.styles.body, role="header"
+            )
         if h.time_and_place:
-            self._para(h.time_and_place, self.p.styles.body)
+            self._para(h.time_and_place, self.p.styles.body, role="header")
         for label, names in (
             ("Present", h.present),
             ("In attendance", h.in_attendance),
@@ -89,8 +147,10 @@ class _Writer:
 
     def _item(self, index: int, item: MinuteItem, questions: list[ClarificationQuestion]) -> None:
         number = self._item_number(index, item.item_ref)
-        heading = self._para(f"{number} {item.heading}".strip(), self.p.styles.heading)
+        self.section = item.item_ref
+        heading = self._para(f"{number} {item.heading}".strip(), self.p.styles.heading, "heading")
         self.heading_runs[item.item_ref] = heading.runs
+        _bookmark(heading, BOOKMARK_ID_BASE + index, bookmark_name(item.item_ref))
         for n, paragraph in enumerate(item.paragraphs, 1):
             prefix = (
                 f"{number}.{n} "
@@ -127,7 +187,7 @@ class _Writer:
 
         # Split the text into runs at every anchor boundary so comments cover exact phrases.
         cuts = sorted({0, len(text), *[s for _, s, _ in spans], *[e for _, _, e in spans]})
-        para = self._para(prefix, self.p.styles.body)
+        para = self._para(prefix, self.p.styles.body, "body", paragraph.paragraph_id)
         runs: list[tuple[int, int, Run]] = []
         for a, b in zip(cuts, cuts[1:], strict=False):
             runs.append((a, b, para.add_run(text[a:b])))
@@ -147,16 +207,17 @@ class _Writer:
         if not names:
             return
         if self.p.attendance_layout == AttendanceLayout.PARAGRAPH:
-            para = self._para("", self.p.styles.body)
+            para = self._para("", self.p.styles.body, role="header")
             para.add_run(f"{label}: ").bold = True
             para.add_run(", ".join(names))
             return
-        self._para("", self.p.styles.body).add_run(label).bold = True
+        self._para("", self.p.styles.body, role="header").add_run(label).bold = True
         for name in names:
-            self._para(name, self.p.styles.body)
+            self._para(name, self.p.styles.body, role="header")
 
     def _actions_table(self, draft: DraftMinutes) -> None:
-        self._para("Actions", self.p.styles.heading)
+        self.section = "actions"
+        self._para("Actions", self.p.styles.heading, role="heading")
         table = self.doc.add_table(rows=1, cols=3)
         if self.p.styles.table in _style_names(self.doc):
             table.style = self.p.styles.table
@@ -175,14 +236,27 @@ class _Writer:
             return f"{self.p.minute_reference_prefix or ''}{index:02d}"
         return item_ref if not item_ref.startswith("AB") else ""
 
-    def _para(self, text: str, style: str) -> Paragraph:
+    def _para(
+        self, text: str, style: str, role: str = "body", paragraph_id: str | None = None
+    ) -> Paragraph:
         para = self.doc.add_paragraph()
         if text:
             para.add_run(text)
         para.style = style if style in _style_names(self.doc) else "Normal"
         if self.marker is not None:
             self.marker._p.addprevious(para._p)
+        n = len(self.written) + 1
+        _bookmark(para, PARAGRAPH_ID_BASE + n, f"{PARAGRAPH_BOOKMARK}{n}")
+        self.written.append((para, f"{self.section}|{role}", paragraph_id))
         return para
+
+    def marks(self) -> list[ParagraphMark]:
+        """Every paragraph written, with its final text (runs are added after _para)."""
+        out = []
+        for n, (para, where, paragraph_id) in enumerate(self.written, 1):
+            section, role = where.split("|", 1)
+            out.append(ParagraphMark(n, section, role, paragraph_id, para.text))
+        return out
 
     def _comment(self, runs: list[Run], q: ClarificationQuestion) -> None:
         if not runs:
@@ -199,6 +273,24 @@ class _Writer:
         for child in list(body):
             if not child.tag.endswith("}sectPr"):  # keep page setup, headers and footers
                 body.remove(child)
+
+
+def bookmark_name(item_ref: str) -> str:
+    """Word bookmark names allow letters, digits and underscores, up to 40 characters."""
+    return BOOKMARK_PREFIX + re.sub(r"\W", "_", item_ref)[:30]
+
+
+def _bookmark(para: Paragraph, ident: int, name: str) -> None:
+    start, end = OxmlElement("w:bookmarkStart"), OxmlElement("w:bookmarkEnd")
+    start.set(qn("w:id"), str(ident))
+    start.set(qn("w:name"), name)
+    end.set(qn("w:id"), str(ident))
+    p = para._p
+    if p.pPr is not None:
+        p.pPr.addnext(start)
+    else:
+        p.insert(0, start)
+    p.append(end)
 
 
 def _style_names(doc: Document) -> set[str]:

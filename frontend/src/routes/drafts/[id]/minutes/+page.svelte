@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, errorText, plural } from '#lib/api.ts';
 	import DraftDocument from '#lib/components/DraftDocument.svelte';
+	import FeedbackPanel from '#lib/components/FeedbackPanel.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import type { PageProps } from './$types';
 
@@ -96,6 +97,7 @@
 	</div>
 
 	<aside class="rail">
+		<FeedbackPanel runId={run.id} votes={data.feedback} />
 		<section class="panel">
 			<header class="panel-head">
 				<Icon name="message" size={15} />

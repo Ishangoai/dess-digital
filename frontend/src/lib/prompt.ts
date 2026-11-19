@@ -20,8 +20,12 @@ const EVIDENCE_TAGS: Record<string, string> = {
 
 const TAGS: Record<string, { kind: SectionKind; title: string }> = {
 	meeting_information: { kind: 'meeting', title: 'Meeting details' },
-	stage_guidance: { kind: 'guidance', title: 'Stage guidance from the profile' },
 	confirmed_evidence_map: { kind: 'earlier', title: 'Confirmed mapping' },
+	this_item: { kind: 'earlier', title: 'This agenda item' },
+	item_evidence: { kind: 'earlier', title: 'Evidence mapped to this item' },
+	house_examples: { kind: 'guidance', title: "Examples from this organisation's final minutes" },
+	particulars: { kind: 'earlier', title: 'Meeting particulars' },
+	clarifications: { kind: 'earlier', title: 'Open clarifications' },
 	evidence_notes: { kind: 'earlier', title: 'Notes from reading the evidence' },
 	selection: { kind: 'earlier', title: 'Content selected (step 2)' },
 	draft: { kind: 'earlier', title: 'Draft minutes (step 3)' },

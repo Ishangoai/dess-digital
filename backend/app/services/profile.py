@@ -73,6 +73,17 @@ def create_profile(
         db.rollback()
         raise DuplicateProfileError(f"profile '{slug}' already exists") from e
     db.refresh(profile)
+    base = active_version(based_on) if based_on else None
+    if based_on and base:
+        # An organisation profile starts as a confirmed copy of its base, ready to draft with.
+        content = version_content(base).model_copy(
+            update={"name": name, "description": description}
+        )
+        summary = f"Copied from {based_on.slug} v{base.version_number}"
+        version = create_version(
+            db, profile, content, origin=VersionOrigin.CUSTOMISATION, change_summary=summary
+        )
+        confirm(db, version, by="copy")
     return profile
 
 

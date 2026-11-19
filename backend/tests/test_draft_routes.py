@@ -89,14 +89,16 @@ def test_corrected_mapping_then_generate(client: TestClient, provider: ScriptedP
     assert result["status"] == "completed"
     assert result["mapping_edited"] is True
     assert result["draft"]["questions"][0]["question_id"] == "Q1"
+    refs = ["1", "2", "3", "4", "5"]
     assert [c["stage"] for c in result["llm_calls"]] == [
         "evidence",
-        "policy",
-        "style",
+        *(f"policy:{r}" for r in refs),
+        "style:header",
+        *(f"style:{r}" for r in refs),
         "validation",
-        "reconsideration",
+        "reconsideration:4",
     ]
-    assert result["usage_total"]["total_tokens"] == 5 * 110
+    assert result["usage_total"]["total_tokens"] == 14 * 110
     assert "T5-13" in provider.requests[1].messages[0].content  # corrected range was used
 
     debug = client.get(f"/api/drafts/{run_id}?debug=true").json()
@@ -161,14 +163,16 @@ def test_failed_stage_is_recorded_and_retryable(
     client: TestClient, provider: ScriptedProvider, db: Session
 ) -> None:
     run_id = create(client)["id"]
-    provider.responses["DraftMinutes"] = LLMProviderError("quota exceeded")
+    good = provider.responses["ItemDraft"]
+    provider.responses["ItemDraft"] = LLMProviderError("quota exceeded")
 
     failed = client.post(f"/api/drafts/{run_id}/generate").json()
     assert failed["status"] == "failed"
     assert failed["error_stage"] == "style"
     assert failed["llm_calls"][-1]["ok"] is False
+    assert failed["llm_calls"][-1]["stage"] == "style:1"
 
-    provider.responses["DraftMinutes"] = samples.draft()
+    provider.responses["ItemDraft"] = good
     assert client.post(f"/api/drafts/{run_id}/generate").json()["status"] == "completed"
     assert db.query(DraftRun).count() == 1
 
@@ -256,18 +260,18 @@ def test_calls_show_what_was_sent_and_received(client: TestClient) -> None:
     calls = client.get(f"/api/drafts/{run['id']}/calls").json()
 
     assert [c["stage"] for c in calls] == [c["stage"] for c in run["llm_calls"]]
-    evidence, style = calls[0], next(c for c in calls if c["stage"] == "style")
+    evidence, style = calls[0], next(c for c in calls if c["stage"] == "style:4")
     assert "Minutes Profile" in evidence["system_prompt"]
     assert "<transcript" in evidence["prompt"] and "<task>" in evidence["prompt"]
     assert "<selection>" in style["prompt"]
-    assert json.loads(style["output"])["items"]
+    assert json.loads(style["output"])["item"]["item_ref"] == "4"
     # The run payload stays small.
     assert "prompt" not in run["llm_calls"][0]
 
 
 def test_failed_call_keeps_its_input(client: TestClient, provider: ScriptedProvider) -> None:
     run_id = create(client)["id"]
-    provider.responses["DraftMinutes"] = LLMProviderError("quota exceeded")
+    provider.responses["ItemDraft"] = LLMProviderError("quota exceeded")
     client.post(f"/api/drafts/{run_id}/generate")
 
     failed = client.get(f"/api/drafts/{run_id}/calls").json()[-1]

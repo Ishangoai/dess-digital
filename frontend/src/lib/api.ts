@@ -233,6 +233,175 @@ export interface ProfileVersion extends VersionSummary {
 	content: ProfileContent;
 }
 
+export type Verdict = 'approved' | 'revision_requested' | 'edited';
+
+export type ChangeStatus = 'unchanged' | 'edited' | 'rewritten' | 'deleted' | 'added';
+
+/** How one item of the uploaded final differs from the draft. */
+export interface ItemChange {
+	item_ref: string;
+	heading: string;
+	status: ChangeStatus;
+	similarity: number;
+	words_added: number;
+	words_removed: number;
+	draft_text: string;
+	final_text: string;
+}
+
+export interface Comparison {
+	run_id: string | null;
+	items: ItemChange[];
+	comments: { author: string; text: string }[];
+	/** Share of the draft the reviewer kept, word-weighted, 0 to 1. */
+	similarity: number;
+}
+
+/** One piece of feedback: a vote, or an edited Word copy compared with the draft. */
+export interface Feedback {
+	id: string;
+	run_id: string;
+	verdict: Verdict;
+	/** 1 approved, 0 revision requested, the similarity for an edited copy. */
+	reward: number;
+	reason: string | null;
+	filename: string | null;
+	comparison: Comparison | null;
+	edited_document_id: string | null;
+	model: string;
+	created_by: string | null;
+	created_at: string;
+}
+
+/** Feedback for one setup (profile version and model). */
+export interface Score {
+	profile_slug: string;
+	profile_version: number;
+	model: string;
+	approvals: number;
+	revisions: number;
+	edits: number;
+	votes: number;
+	net: number;
+	approval_rate: number;
+	mean_similarity: number | null;
+	expected: number;
+}
+
+export type ParagraphStatus = 'unchanged' | 'changed' | 'removed' | 'added' | 'moved';
+export type Route = 'candidate' | 'defect' | 'meeting_only';
+
+/** One edit inside a paragraph, labelled by kind, dimension and cause (DESS-051). */
+export interface EditLabel {
+	id: string;
+	hunk: number;
+	before: string;
+	after: string;
+	source: 'code' | 'model';
+	kind: string;
+	dimensions: string[];
+	cause: string;
+	support: string;
+	evidence: LineRef[];
+	profile_basis: string | null;
+	reason: string;
+	pattern: string;
+	route: Route;
+}
+
+/** One paragraph of the original or the edited copy, and what happened to it (DESS-050). */
+export interface AlignedParagraph {
+	id: string;
+	position: number;
+	item_ref: string;
+	original_item_ref: string | null;
+	original_n: number | null;
+	paragraph_id: string | null;
+	role: string;
+	status: ParagraphStatus;
+	similarity: number;
+	original_text: string;
+	final_text: string;
+	diff: { op: 'equal' | 'insert' | 'delete'; text: string }[];
+	tracked: { kind: string; text: string; author: string }[];
+	comment_ids: string[];
+	labels: EditLabel[];
+}
+
+/** Repeated edits grouped into one finding with a count. */
+export interface EditFinding {
+	key: string;
+	pattern: string;
+	kind: string;
+	dimensions: string[];
+	cause: string;
+	route: Route;
+	count: number;
+	items: string[];
+	reason: string;
+	profile_basis: string | null;
+	evidence: LineRef[];
+	label_ids: string[];
+}
+
+export interface EditedSummary {
+	id: string;
+	filename: string;
+	created_at: string;
+	created_by: string | null;
+	similarity: number;
+	export_id: string;
+	original_recreated: boolean;
+	counts: Partial<Record<ParagraphStatus, number>>;
+	classified_at: string | null;
+}
+
+export interface EditReview extends EditedSummary {
+	sections: { item_ref: string; heading: string; added: boolean }[];
+	paragraphs: AlignedParagraph[];
+	comments: {
+		id: string;
+		author: string;
+		text: string;
+		anchor: string;
+		position: number | null;
+		question_id: string | null;
+	}[];
+	answers: { question_id: string; question: string; reply: string; author: string }[];
+	findings: EditFinding[];
+	classify_error: string | null;
+}
+
+export const EDIT_KINDS: Record<string, string> = {
+	factual_correction: 'Factual correction',
+	content_added: 'Content added',
+	content_removed: 'Content removed',
+	wording_style: 'Wording or style',
+	structure_layout: 'Structure or layout'
+};
+
+export const EDIT_CAUSES: Record<string, string> = {
+	evidence_misread: 'Evidence misread',
+	profile_not_applied: 'Profile not applied',
+	profile_silent: 'Profile silent or says otherwise',
+	meeting_only: 'This meeting only'
+};
+
+export const ROUTES: Record<Route, { label: string; about: string }> = {
+	candidate: {
+		label: 'Candidate profile changes',
+		about: 'The profile is silent or says otherwise. These can go forward as amendment proposals.'
+	},
+	defect: {
+		label: 'The draft got it wrong',
+		about: 'Misread evidence, or a rule the profile already has that the draft did not apply. No profile change: these become test cases.'
+	},
+	meeting_only: {
+		label: 'This meeting only',
+		about: 'Kept with this meeting. Nothing to learn for future minutes.'
+	}
+};
+
 export class ApiError extends Error {
 	constructor(
 		public status: number,
@@ -310,7 +479,33 @@ export const api = {
 		return response.blob();
 	},
 
+	getFeedback: (id: string, f: Fetch = fetch) =>
+		json<Feedback[]>(f(`/api/drafts/${id}/feedback`)),
+	addFeedback: (id: string, verdict: Verdict, reason = '') =>
+		json<Feedback>(
+			post(`/api/drafts/${id}/feedback`, { verdict, reason: reason || null, by: 'web-ui' })
+		),
+	uploadFinal: (id: string, file: File) => {
+		const form = new FormData();
+		form.append('file', file);
+		form.append('by', 'web-ui');
+		return json<Feedback>(fetch(`/api/drafts/${id}/final`, { method: 'POST', body: form }));
+	},
+	getScores: (f: Fetch = fetch) => json<Score[]>(f('/api/feedback/scores')),
+	listEdits: (id: string, f: Fetch = fetch) =>
+		json<EditedSummary[]>(f(`/api/drafts/${id}/edits`)),
+	getEdit: (id: string, editedId: string, f: Fetch = fetch) =>
+		json<EditReview>(f(`/api/drafts/${id}/edits/${editedId}`)),
+	classifyEdit: (id: string, editedId: string) =>
+		json<EditReview>(post(`/api/drafts/${id}/edits/${editedId}/classify`)),
+
 	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),
+	createProfile: (body: {
+		slug: string;
+		name: string;
+		body_name: string | null;
+		based_on_slug: string;
+	}) => json<ProfileSummary>(post('/api/profiles', body)),
 	getProfile: (slug: string, f: Fetch = fetch) =>
 		json<ProfileDetail>(f(`/api/profiles/${slug}`)),
 	getVersion: (slug: string, n: number, f: Fetch = fetch) =>
@@ -416,6 +611,14 @@ export const STAGE_INFO: Record<string, { label: string; about: string }> = {
 		about: "Considers the check's findings once and revises the draft where they are supported."
 	}
 };
+
+/** 'policy:4' -> 'Select content · item 4'; per-item calls carry their item after a colon. */
+export function stageLabel(stage: string): string {
+	const [base, item] = stage.split(':');
+	const label = STAGE_INFO[base]?.label ?? base;
+	if (!item) return label;
+	return item === 'header' ? `${label} · header` : `${label} · item ${item}`;
+}
 
 export function compact(n: number): string {
 	return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);

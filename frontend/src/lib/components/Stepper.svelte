@@ -19,7 +19,8 @@
 	const steps = $derived([
 		{ label: 'Evidence', href: null },
 		{ label: 'Mapping', href: run.mapping ? `/drafts/${run.id}/mapping` : null },
-		{ label: 'Minutes', href: run.draft ? `/drafts/${run.id}/minutes` : null }
+		{ label: 'Minutes', href: run.draft ? `/drafts/${run.id}/minutes` : null },
+		{ label: 'Edits', href: run.draft ? `/drafts/${run.id}/edits` : null }
 	]);
 </script>
 
