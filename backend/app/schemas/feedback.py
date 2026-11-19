@@ -23,6 +23,7 @@ class FeedbackOut(BaseModel):
     reason: str | None
     filename: str | None
     comparison: Comparison | None
+    edited_document_id: uuid.UUID | None
     model: str
     created_by: str | None
     created_at: datetime

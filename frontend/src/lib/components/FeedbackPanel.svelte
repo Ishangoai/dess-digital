@@ -83,6 +83,11 @@
 							{/each}
 						</ul>
 					{/if}
+					{#if latest.edited_document_id}
+						<a class="reason small" href="/drafts/{runId}/edits?e={latest.edited_document_id}">
+							Review the changes paragraph by paragraph
+						</a>
+					{/if}
 				{/if}
 			</div>
 		{:else}

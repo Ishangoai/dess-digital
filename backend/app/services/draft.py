@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.llm import LLMClient
 from app.minutes.checks import validate_mapping
-from app.minutes.docx_export import render_minutes_docx
 from app.minutes.evidence import (
     EvidenceBundle,
     MeetingInfo,
@@ -20,8 +19,8 @@ from app.minutes.evidence import (
     SourceText,
     source_ids_for,
 )
-from app.minutes.extract import UnsupportedFileError, extract_text
-from app.minutes.llm_schemas import DraftMinutes, EvidenceAnalysis, EvidenceMap
+from app.minutes.extract import extract_text
+from app.minutes.llm_schemas import EvidenceAnalysis, EvidenceMap
 from app.minutes.pipeline import Pipeline, PipelineStage, StageError, StageResult
 from app.minutes.prompts import PromptContext
 from app.models.draft import DraftDocument, DraftRun, DraftStatus, LLMCall
@@ -284,21 +283,6 @@ def generate(
     run.completed_at = utcnow()
     db.commit()
     return run
-
-
-def render_document(run: DraftRun, template: bytes | None = None) -> bytes:
-    """The completed draft as a Word document, optionally built into a user template."""
-    if run.draft is None:
-        raise InvalidStateError(f"no draft yet (status {run.status})")
-    presentation = profile_svc.version_content(run.profile_version).presentation
-    try:
-        return render_minutes_docx(
-            DraftMinutes.model_validate(run.draft), presentation, template, run_id=str(run.id)
-        )
-    except UnsupportedFileError:
-        raise
-    except Exception as e:  # python-docx raises several unrelated types for bad templates
-        raise UnsupportedFileError(f"template is not a readable .docx file: {e}") from e
 
 
 def _claim(db: Session, run: DraftRun, allowed: list[DraftStatus], new: DraftStatus) -> bool:

@@ -5,13 +5,9 @@ from dataclasses import dataclass
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from app.minutes.extract import UnsupportedFileError
-from app.minutes.llm_schemas import DraftMinutes
-from app.minutes.roundtrip import compare_final
 from app.models.draft import DraftRun, DraftStatus
 from app.models.feedback import REWARDS, DraftFeedback, Verdict
 from app.models.profile import MinutesProfile, MinutesProfileVersion
-from app.services import profile as profile_svc
 from app.services.draft import InvalidInputError, InvalidStateError
 
 
@@ -19,36 +15,13 @@ def add_feedback(
     db: Session, run: DraftRun, verdict: Verdict, reason: str | None = None, by: str | None = None
 ) -> DraftFeedback:
     """Record one vote on a finished draft. A revision request needs a reason."""
-    _require_finished(run)
+    require_finished(run)
     reason = (reason or "").strip() or None
     if verdict == Verdict.EDITED:
         raise InvalidInputError("upload the edited Word file instead")
     if verdict == Verdict.REVISION_REQUESTED and reason is None:
         raise InvalidInputError("say what needs revising")
-    return _save(db, run, verdict, REWARDS[verdict], reason=reason, by=by)
-
-
-def add_final(
-    db: Session, run: DraftRun, filename: str, data: bytes, by: str | None = None
-) -> DraftFeedback:
-    """Compare the reviewer's edited copy with the draft; the reward is how much was kept."""
-    _require_finished(run)
-    if not filename.lower().endswith(".docx"):
-        raise UnsupportedFileError(f"{filename}: upload the edited Word (.docx) file")
-    assert run.draft is not None
-    presentation = profile_svc.version_content(run.profile_version).presentation
-    comparison = compare_final(
-        data, DraftMinutes.model_validate(run.draft), str(run.id), presentation
-    )
-    return _save(
-        db,
-        run,
-        Verdict.EDITED,
-        comparison.similarity,
-        filename=filename,
-        comparison=comparison.model_dump(mode="json"),
-        by=by,
-    )
+    return save(db, run, verdict, REWARDS[verdict], reason=reason, by=by)
 
 
 def votes_for(db: Session, run: DraftRun) -> list[DraftFeedback]:
@@ -127,12 +100,12 @@ def scores(db: Session) -> list[Score]:
     return sorted(rows, key=lambda s: (s.expected, s.votes), reverse=True)
 
 
-def _require_finished(run: DraftRun) -> None:
+def require_finished(run: DraftRun) -> None:
     if run.status != DraftStatus.COMPLETED or run.draft is None:
         raise InvalidStateError(f"only finished drafts can be reviewed (status {run.status})")
 
 
-def _save(
+def save(
     db: Session, run: DraftRun, verdict: Verdict, reward: float, **fields: object
 ) -> DraftFeedback:
     feedback = DraftFeedback(
@@ -142,6 +115,7 @@ def _save(
         reason=fields.get("reason"),
         filename=fields.get("filename"),
         comparison=fields.get("comparison"),
+        edited_document_id=fields.get("edited_document_id"),
         profile_version_id=run.profile_version_id,
         model=_model(run),
         created_by=fields.get("by"),

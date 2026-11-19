@@ -34,6 +34,7 @@ class DraftFeedback(Base):
     # Only for an uploaded edit: the file name and the item-by-item comparison.
     filename: Mapped[str | None] = mapped_column(String(255))
     comparison: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    edited_document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("edited_documents.id"))
     # The setup that wrote the draft, copied here so scores can be grouped by it.
     profile_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("minutes_profile_versions.id"))
     model: Mapped[str] = mapped_column(String(128))

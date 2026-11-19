@@ -224,8 +224,6 @@ export interface ProfileContent {
 	description: string | null;
 	/** The full minuting logic in markdown, sent to the model on every call. */
 	logic: string;
-	/** House lessons learned from this organisation's feedback, sent after the logic. */
-	lessons?: string | null;
 	/** Word layout settings; the API fills in defaults. */
 	presentation?: Record<string, unknown>;
 }
@@ -269,6 +267,7 @@ export interface Feedback {
 	reason: string | null;
 	filename: string | null;
 	comparison: Comparison | null;
+	edited_document_id: string | null;
 	model: string;
 	created_by: string | null;
 	created_at: string;
@@ -288,6 +287,120 @@ export interface Score {
 	mean_similarity: number | null;
 	expected: number;
 }
+
+export type ParagraphStatus = 'unchanged' | 'changed' | 'removed' | 'added' | 'moved';
+export type Route = 'candidate' | 'defect' | 'meeting_only';
+
+/** One edit inside a paragraph, labelled by kind, dimension and cause (DESS-051). */
+export interface EditLabel {
+	id: string;
+	hunk: number;
+	before: string;
+	after: string;
+	source: 'code' | 'model';
+	kind: string;
+	dimensions: string[];
+	cause: string;
+	support: string;
+	evidence: LineRef[];
+	profile_basis: string | null;
+	reason: string;
+	pattern: string;
+	route: Route;
+}
+
+/** One paragraph of the original or the edited copy, and what happened to it (DESS-050). */
+export interface AlignedParagraph {
+	id: string;
+	position: number;
+	item_ref: string;
+	original_item_ref: string | null;
+	original_n: number | null;
+	paragraph_id: string | null;
+	role: string;
+	status: ParagraphStatus;
+	similarity: number;
+	original_text: string;
+	final_text: string;
+	diff: { op: 'equal' | 'insert' | 'delete'; text: string }[];
+	tracked: { kind: string; text: string; author: string }[];
+	comment_ids: string[];
+	labels: EditLabel[];
+}
+
+/** Repeated edits grouped into one finding with a count. */
+export interface EditFinding {
+	key: string;
+	pattern: string;
+	kind: string;
+	dimensions: string[];
+	cause: string;
+	route: Route;
+	count: number;
+	items: string[];
+	reason: string;
+	profile_basis: string | null;
+	evidence: LineRef[];
+	label_ids: string[];
+}
+
+export interface EditedSummary {
+	id: string;
+	filename: string;
+	created_at: string;
+	created_by: string | null;
+	similarity: number;
+	export_id: string;
+	original_recreated: boolean;
+	counts: Partial<Record<ParagraphStatus, number>>;
+	classified_at: string | null;
+}
+
+export interface EditReview extends EditedSummary {
+	sections: { item_ref: string; heading: string; added: boolean }[];
+	paragraphs: AlignedParagraph[];
+	comments: {
+		id: string;
+		author: string;
+		text: string;
+		anchor: string;
+		position: number | null;
+		question_id: string | null;
+	}[];
+	answers: { question_id: string; question: string; reply: string; author: string }[];
+	findings: EditFinding[];
+	classify_error: string | null;
+}
+
+export const EDIT_KINDS: Record<string, string> = {
+	factual_correction: 'Factual correction',
+	content_added: 'Content added',
+	content_removed: 'Content removed',
+	wording_style: 'Wording or style',
+	structure_layout: 'Structure or layout'
+};
+
+export const EDIT_CAUSES: Record<string, string> = {
+	evidence_misread: 'Evidence misread',
+	profile_not_applied: 'Profile not applied',
+	profile_silent: 'Profile silent or says otherwise',
+	meeting_only: 'This meeting only'
+};
+
+export const ROUTES: Record<Route, { label: string; about: string }> = {
+	candidate: {
+		label: 'Candidate profile changes',
+		about: 'The profile is silent or says otherwise. These can go forward as amendment proposals.'
+	},
+	defect: {
+		label: 'The draft got it wrong',
+		about: 'Misread evidence, or a rule the profile already has that the draft did not apply. No profile change: these become test cases.'
+	},
+	meeting_only: {
+		label: 'This meeting only',
+		about: 'Kept with this meeting. Nothing to learn for future minutes.'
+	}
+};
 
 export class ApiError extends Error {
 	constructor(
@@ -379,6 +492,12 @@ export const api = {
 		return json<Feedback>(fetch(`/api/drafts/${id}/final`, { method: 'POST', body: form }));
 	},
 	getScores: (f: Fetch = fetch) => json<Score[]>(f('/api/feedback/scores')),
+	listEdits: (id: string, f: Fetch = fetch) =>
+		json<EditedSummary[]>(f(`/api/drafts/${id}/edits`)),
+	getEdit: (id: string, editedId: string, f: Fetch = fetch) =>
+		json<EditReview>(f(`/api/drafts/${id}/edits/${editedId}`)),
+	classifyEdit: (id: string, editedId: string) =>
+		json<EditReview>(post(`/api/drafts/${id}/edits/${editedId}/classify`)),
 
 	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),
 	createProfile: (body: {
@@ -387,8 +506,6 @@ export const api = {
 		body_name: string | null;
 		based_on_slug: string;
 	}) => json<ProfileSummary>(post('/api/profiles', body)),
-	proposeLessons: (slug: string) =>
-		json<ProfileVersion>(post(`/api/profiles/${slug}/learn?by=web-ui`)),
 	getProfile: (slug: string, f: Fetch = fetch) =>
 		json<ProfileDetail>(f(`/api/profiles/${slug}`)),
 	getVersion: (slug: string, n: number, f: Fetch = fetch) =>
