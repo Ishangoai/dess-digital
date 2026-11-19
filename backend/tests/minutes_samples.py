@@ -3,6 +3,7 @@
 import re
 
 from app.llm.types import CompletionRequest
+from app.minutes.edit_labels import EditLabels
 from app.minutes.llm_schemas import (
     AgendaItem,
     AnchorKind,
@@ -314,4 +315,5 @@ def all_stage_outputs(findings: bool = True) -> dict:
         "ValidationReport": validation(findings),
         "ItemReconsideration": lambda r: item_reconsideration(item_ref(r)),
         "HeaderReconsideration": HeaderReconsideration(decisions=[], revised=header_draft()),
+        "EditLabels": EditLabels(labels=[]),
     }

@@ -143,6 +143,19 @@ def test_without_any_stored_download_the_original_is_rendered_again(
     assert summary["original_recreated"] is True
 
 
+def test_an_upload_is_classified_automatically(client: TestClient) -> None:
+    run_id, edited_id = edited_draft(client)  # the scripted model labels nothing
+
+    review = client.get(f"/api/drafts/{run_id}/edits/{edited_id}").json()
+
+    assert review["classifying"] is False
+    assert review["classified_at"] is not None
+    assert [(f["pattern"], f["count"]) for f in review["findings"]] == [
+        ("Use roles, not names, in ordinary reporting", 1)
+    ]
+    assert "no label for" in review["classify_error"]
+
+
 def test_unknown_edit_is_404(client: TestClient) -> None:
     run_id = create(client, auto_confirm_mapping="true")["id"]
     missing = "00000000-0000-0000-0000-000000000000"
@@ -179,7 +192,7 @@ def test_classify_labels_cheap_edits_in_code_and_the_rest_by_model(
     assert (wording["source"], wording["route"]) == ("model", "candidate")
     assert [(f["pattern"], f["route"], f["count"]) for f in review["findings"]] == [
         ("resolution wording", "candidate", 1),
-        ("name replaced by role", "defect", 1),
+        ("Use roles, not names, in ordinary reporting", "defect", 1),
     ]
     assert review["classified_at"] is not None and review["classify_error"] is None
 

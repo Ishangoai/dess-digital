@@ -64,28 +64,10 @@
 				<span class="tiny muted">{formatDate(latest.created_at)}</span>
 				{#if latest.reason}<span class="reason">{latest.reason}</span>{/if}
 				{#if latest.comparison}
-					{@const changed = latest.comparison.items.filter((i) => i.status !== 'unchanged')}
-					<span class="reason">
-						{percent(latest.comparison.similarity)} of the draft kept{changed.length
-							? `; ${plural(changed.length, 'part')} changed:`
-							: ', nothing changed.'}
-					</span>
-					{#if changed.length}
-						<ul class="changes">
-							{#each changed as item (item.item_ref)}
-								<li>
-									<span class="status {item.status}">{item.status}</span>
-									{item.heading}
-									{#if item.status === 'edited' || item.status === 'rewritten'}
-										<span class="tiny muted">+{item.words_added} / -{item.words_removed} words</span>
-									{/if}
-								</li>
-							{/each}
-						</ul>
-					{/if}
+					<span class="reason">{percent(latest.comparison.similarity)} of the draft kept.</span>
 					{#if latest.edited_document_id}
 						<a class="reason small" href="/drafts/{runId}/edits?e={latest.edited_document_id}">
-							Review the changes paragraph by paragraph
+							See what we learned from your edits
 						</a>
 					{/if}
 				{/if}
@@ -188,26 +170,9 @@
 	}
 
 	.reason,
-	.changes {
-		flex-basis: 100%;
-	}
 
-	.changes {
-		margin: 0;
-		padding-left: 1rem;
-	}
 
-	.status {
-		font-size: 0.7rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		color: var(--muted);
-	}
 
-	.status.deleted,
-	.status.rewritten {
-		color: var(--err);
-	}
 
 	.row button {
 		margin: 0;

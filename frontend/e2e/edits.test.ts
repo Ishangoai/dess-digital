@@ -49,6 +49,7 @@ function review(classified: boolean) {
 		id: 'ed-1', filename: 'final.docx', created_at: '2026-11-10T10:00:00Z', created_by: 'web-ui',
 		similarity: 0.82, export_id: 'ex-1', original_recreated: false,
 		counts: { unchanged: 1, changed: 1 }, classified_at: classified ? '2026-11-10T10:01:00Z' : null,
+		classifying: !classified,
 		sections: [{ item_ref: 'header', heading: 'Header', added: false }, { item_ref: '4', heading: 'Roof contract', added: false }],
 		paragraphs: [
 			row('r-1', 'changed', 'The Board approved phase one.', 'It was resolved that phase one be approved.', [
@@ -65,7 +66,7 @@ function review(classified: boolean) {
 		comments: [],
 		answers: [{ question_id: 'Q1', question: 'Who will write to tenants?', reply: 'The Company Secretary.', author: 'Jane' }],
 		findings: classified
-			? [{ key: 'k', pattern: 'resolution wording', kind: 'wording_style', dimensions: ['WS5'], cause: 'profile_silent',
+			? [{ key: 'k', pattern: "Write approvals as 'It was resolved that'", kind: 'wording_style', dimensions: ['WS5'], cause: 'profile_silent',
 				route: 'candidate', count: 2, items: ['4', '7'], reason: 'House phrasing for resolutions.', profile_basis: null,
 				evidence: [], label_ids: ['l-1'] }]
 			: [],
@@ -73,50 +74,52 @@ function review(classified: boolean) {
 	};
 }
 
+/** Fake API. The upload is still being classified on the first visit, and done after that. */
 async function mockApi(page: Page) {
-	let classified = false;
+	let visits = 0;
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const key = `${request.method()} ${new URL(request.url()).pathname}`;
-		if (key === 'POST /api/drafts/run-1/edits/ed-1/classify') {
-			classified = true;
-			return route.fulfill({ json: review(true) });
-		}
+		if (key === 'GET /api/drafts/run-1/edits/ed-1') return route.fulfill({ json: review(visits++ > 0) });
 		const routes: Record<string, unknown> = {
 			'GET /api/drafts': [],
 			'GET /api/drafts/run-1': run,
-			'GET /api/drafts/run-1/edits': [review(false)],
-			'GET /api/drafts/run-1/edits/ed-1': review(classified)
+			'GET /api/drafts/run-1/edits': [review(false)]
 		};
 		if (key in routes) return route.fulfill({ json: routes[key] });
 		return route.fulfill({ status: 404, json: { detail: `Not mocked: ${key}` } });
 	});
 }
 
-test('the edited copy is shown side by side with word-level changes', async ({ page }) => {
+test('the page opens on a short summary of what was learned', async ({ page }) => {
 	await mockApi(page);
 	await page.goto('/drafts/run-1/edits');
 
 	await expect(page.getByText('82%')).toBeVisible();
+	await expect(page.getByText('Working out what we learned from your edits...')).toBeVisible();
+
+	const learned = page.getByLabel('What we learned');
+	await expect(learned.getByText('Remembered as house style')).toBeVisible({ timeout: 10_000 });
+	await expect(learned.getByText("Write approvals as 'It was resolved that'")).toBeVisible();
+	await expect(learned.getByText('×2')).toBeVisible();
+	await expect(learned.getByText('The Company Secretary.')).toBeVisible();
+	await expect(page.locator('del')).toHaveCount(0); // the details stay hidden
+});
+
+test('all changes can still be shown, side by side with their labels', async ({ page }) => {
+	await mockApi(page);
+	await page.goto('/drafts/run-1/edits');
+	await expect(page.getByText('Remembered as house style')).toBeVisible({ timeout: 10_000 });
+
+	await page.getByRole('button', { name: /Show all changes/ }).click();
+
 	await expect(page.locator('del', { hasText: 'The Board approved' })).toBeVisible();
 	await expect(page.locator('ins', { hasText: 'It was resolved that' })).toBeVisible();
 	await expect(page.getByText('Priya Shah remained concerned.')).toHaveCount(0); // unchanged hidden
-	await expect(page.getByText('The Company Secretary.')).toBeVisible();
-
-	await page.getByLabel('Only show changed paragraphs').uncheck();
-	await expect(page.getByText('Priya Shah remained concerned.').first()).toBeVisible();
-});
-
-test('classifying labels each edit and groups repeats', async ({ page }) => {
-	await mockApi(page);
-	await page.goto('/drafts/run-1/edits');
-
-	await page.getByRole('button', { name: 'Classify edits' }).click();
-
-	const findings = page.getByLabel('What was learned');
-	await expect(findings.getByText('Candidate profile changes')).toBeVisible();
-	await expect(findings.getByText('×2')).toBeVisible();
 	await page.getByText('Profile silent or says otherwise · WS5 · Wording or style', { exact: true }).click();
 	await expect(page.getByText('"The Board approved" → "It was resolved that"')).toBeVisible();
 	await expect(page.getByText('T12-13')).toBeVisible();
+
+	await page.getByLabel('Only show changed paragraphs').uncheck();
+	await expect(page.getByText('Priya Shah remained concerned.').first()).toBeVisible();
 });

@@ -4,6 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.config import settings
 from app.minutes.edit_labels import Finding, group_findings
 from app.models.edits import EditClassification, EditedDocument
 
@@ -57,6 +58,7 @@ class EditedSummary(BaseModel):
     original_recreated: bool  # no stored download was found, so the original was rendered again
     counts: dict[str, int]  # paragraphs per status
     classified_at: datetime | None
+    classifying: bool  # automatic classification has not finished yet
 
     @classmethod
     def of(cls, e: EditedDocument) -> "EditedSummary":
@@ -73,6 +75,9 @@ class EditedSummary(BaseModel):
             original_recreated=e.export.recreated,
             counts=counts,
             classified_at=e.classified_at,
+            classifying=settings.minutes_auto_classify
+            and e.classified_at is None
+            and e.classify_error is None,
         )
 
 

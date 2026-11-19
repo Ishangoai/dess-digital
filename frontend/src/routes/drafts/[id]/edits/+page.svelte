@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, invalidate } from '$app/navigation';
+	import { onDestroy } from 'svelte';
 	import {
 		api,
 		EDIT_CAUSES,
@@ -8,7 +9,6 @@
 		formatDate,
 		lineRef,
 		plural,
-		ROUTES,
 		type AlignedParagraph,
 		type EditLabel,
 		type Route
@@ -22,11 +22,26 @@
 
 	let busy = $state(false);
 	let error = $state('');
+	let details = $state(false);
 	let onlyChanges = $state(true);
 	let fileInput = $state<HTMLInputElement>();
 
 	const percent = (n: number) => `${Math.round(n * 100)}%`;
-	const ROUTE_ORDER: Route[] = ['candidate', 'defect', 'meeting_only'];
+
+	// What the professional reads: what was learned, in plain words.
+	const LEARNED: { route: Route; title: string; about: string }[] = [
+		{
+			route: 'candidate',
+			title: 'Remembered as house style',
+			about: 'Suggested for your profile. Nothing changes until it is confirmed.'
+		},
+		{
+			route: 'defect',
+			title: 'Things the draft got wrong',
+			about: 'Already asked for by the standards, or a fact misread. The drafting is fixed, not your profile.'
+		},
+		{ route: 'meeting_only', title: 'One-offs, not remembered', about: '' }
+	];
 	const STATUS_LABELS: Record<string, string> = {
 		unchanged: 'Unchanged',
 		changed: 'Changed',
@@ -36,12 +51,21 @@
 	};
 
 	const comments = $derived(new Map((review?.comments ?? []).map((c) => [c.id, c])));
+	const edits = $derived(review?.findings.reduce((n, f) => n + f.count, 0) ?? 0);
 	const sections = $derived(
 		(review?.sections ?? []).map((s) => {
 			const rows = (review?.paragraphs ?? []).filter((p) => p.item_ref === s.item_ref);
 			return { ...s, rows, changed: rows.filter((r) => r.status !== 'unchanged' || r.labels.length).length };
 		})
 	);
+
+	// While the edits are being classified in the background, check back every few seconds.
+	let timer: ReturnType<typeof setInterval> | undefined;
+	$effect(() => {
+		clearInterval(timer);
+		if (review?.classifying) timer = setInterval(() => invalidate('app:edits'), 4000);
+	});
+	onDestroy(() => clearInterval(timer));
 
 	async function act(action: () => Promise<unknown>) {
 		busy = true;
@@ -84,7 +108,7 @@
 <div class="page stack">
 	<header class="top">
 		<div>
-			<h2>Edits</h2>
+			<h2>Your edits</h2>
 			{#if review}
 				<p class="small muted">
 					{review.filename} · uploaded {formatDate(review.created_at)} ·
@@ -96,11 +120,7 @@
 		</div>
 		<div class="row">
 			{#if data.edits.length > 1}
-				<select
-					aria-label="Uploaded copy"
-					value={review?.id}
-					onchange={(e) => goto(`?e=${e.currentTarget.value}`)}
-				>
+				<select aria-label="Uploaded copy" value={review?.id} onchange={(e) => goto(`?e=${e.currentTarget.value}`)}>
 					{#each data.edits as e (e.id)}<option value={e.id}>{formatDate(e.created_at)} · {e.filename}</option>{/each}
 				</select>
 			{/if}
@@ -115,131 +135,129 @@
 				aria-label="Edited Word file"
 				onchange={(e) => upload(e.currentTarget.files?.[0])}
 			/>
-			{#if review}
-				<button class="btn sm primary" onclick={classify} disabled={busy}>
-					{busy ? 'Working...' : review.classified_at ? 'Classify again' : 'Classify edits'}
-				</button>
-			{/if}
 		</div>
 	</header>
 
 	{#if error}<p class="alert error small">{error}</p>{/if}
 
 	{#if review}
-		<div class="counts small">
-			{#each Object.entries(review.counts) as [status, n] (status)}
-				<span class="status {status}">{plural(n, STATUS_LABELS[status].toLowerCase() + ' paragraph')}</span>
-			{/each}
-		</div>
-		{#if review.original_recreated}
-			<p class="alert small">
-				No stored download was found for this copy, so the original was rendered again from the draft.
-			</p>
-		{/if}
-		{#if review.classify_error}<p class="alert error small">{review.classify_error}</p>{/if}
-
-		{#if review.classified_at}
-			<section class="card stack findings" aria-label="What was learned">
-				<h3>What the edits show</h3>
-				{#each ROUTE_ORDER as route (route)}
-					{@const group = review.findings.filter((f) => f.route === route)}
-					{#if group.length}
-						<div class="route {route}">
-							<h4>{ROUTES[route].label} <span class="muted">({group.reduce((n, f) => n + f.count, 0)})</span></h4>
-							<p class="tiny muted">{ROUTES[route].about}</p>
+		<section class="card stack learned" aria-label="What we learned">
+			<h3>What we learned from your edits</h3>
+			{#if review.classifying}
+				<p class="small muted working">Working out what we learned from your edits...</p>
+			{:else if !review.findings.length}
+				<p class="small muted">
+					{review.classify_error ? 'We could not work this out.' : 'Nothing to learn: the draft was kept as it was.'}
+				</p>
+			{:else}
+				{#each LEARNED as group (group.route)}
+					{@const found = review.findings.filter((f) => f.route === group.route)}
+					{#if found.length}
+						<div class="group {group.route}">
+							<h4>{group.title}</h4>
+							{#if group.about}<p class="tiny muted">{group.about}</p>{/if}
 							<ul>
-								{#each group as f (f.key)}
-									<li>
-										<strong>{f.pattern}</strong>
-										{#if f.count > 1}<span class="count">×{f.count}</span>{/if}
-										<span class="tiny muted">
-											{EDIT_CAUSES[f.cause] ?? f.cause} · {f.dimensions.join(', ')} · {EDIT_KINDS[f.kind] ?? f.kind}
-											· {f.items.length === 1 ? 'item' : 'items'} {f.items.join(', ')}
-										</span>
-										<div class="small">{f.reason}</div>
-										{#if f.profile_basis}<div class="tiny muted">Profile: {f.profile_basis}</div>{/if}
-										{#if f.evidence.length}<div class="tiny muted mono">{f.evidence.map(lineRef).join(', ')}</div>{/if}
-									</li>
+								{#each found as f (f.key)}
+									<li>{f.pattern}{#if f.count > 1}<span class="count">×{f.count}</span>{/if}</li>
 								{/each}
 							</ul>
 						</div>
 					{/if}
 				{/each}
-				{#if !review.findings.length}<p class="small muted">No edits to classify.</p>{/if}
-			</section>
-		{/if}
-
-		{#if review.answers.length}
-			<section class="card stack">
-				<h3>Answers to questions</h3>
-				{#each review.answers as a (a.question_id)}
-					<div class="answer small">
-						<span class="mono">{a.question_id}</span> {a.question}
-						<div><strong>{a.author}:</strong> {a.reply}</div>
-					</div>
-				{/each}
-			</section>
-		{/if}
-
-		<label class="small toggle"><input type="checkbox" bind:checked={onlyChanges} /> Only show changed paragraphs</label>
-
-		{#each sections as s (s.item_ref)}
-			{#if !onlyChanges || s.changed}
-				<section class="card item">
-					<h3>
-						{s.item_ref === 'header' || s.item_ref === 'actions' || s.added ? s.heading : `${s.item_ref}. ${s.heading}`}
-						{#if s.added}<span class="status added">added by the reviewer</span>{/if}
-					</h3>
-					<div class="grid head tiny muted"><span>Draft</span><span>Edited copy</span></div>
-					{#each shown(s.rows) as r (r.id)}
-						<div class="grid row-{r.status}">
-							<div class="cell">
-								<span class="status {r.status}">{STATUS_LABELS[r.status]}</span>
-								{#if r.status === 'moved' && r.original_item_ref}<span class="tiny muted">from item {r.original_item_ref}</span>{/if}
-								<p>
-									{#each r.diff as d, i (i)}
-										{#if d.op === 'equal'}{d.text}{:else if d.op === 'delete'}<del>{d.text}</del>{/if}
-									{/each}
-								</p>
-							</div>
-							<div class="cell">
-								<p>
-									{#each r.diff as d, i (i)}
-										{#if d.op === 'equal'}{d.text}{:else if d.op === 'insert'}<ins>{d.text}</ins>{/if}
-									{/each}
-								</p>
-								{#if r.tracked.length}<p class="tiny muted">{plural(r.tracked.length, 'tracked change')}</p>{/if}
-								{#each r.comment_ids as cid (cid)}
-									{@const c = comments.get(cid)}
-									{#if c}<p class="comment tiny"><Icon name="message" size={11} /> <strong>{c.author}:</strong> {c.text}</p>{/if}
-								{/each}
-							</div>
-							{#if r.labels.length}
-								<ul class="labels">
-									{#each r.labels as l (l.id)}
-										<li class="label {l.route}">
-											<details>
-												<summary>{labelTitle(l)}</summary>
-												<div class="small">{l.reason}</div>
-												{#if l.before || l.after}
-													<div class="tiny mono">"{l.before || '—'}" → "{l.after || '—'}"</div>
-												{/if}
-												{#if l.profile_basis}<div class="tiny muted">Profile: {l.profile_basis}</div>{/if}
-												{#if l.support !== 'not_applicable'}
-													<div class="tiny muted">Added content: {l.support === 'transcript' ? 'supported by the transcript' : "the professional's own knowledge"}</div>
-												{/if}
-												{#if l.evidence.length}<div class="tiny muted mono">{l.evidence.map(lineRef).join(', ')}</div>{/if}
-												<div class="tiny muted">{l.source === 'code' ? 'Labelled by a rule' : 'Labelled by the model'}</div>
-											</details>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-					{/each}
-				</section>
 			{/if}
-		{/each}
+			{#if review.answers.length}
+				<div class="group">
+					<h4>Your answers to our questions</h4>
+					<ul>
+						{#each review.answers as a (a.question_id)}<li>{a.question} <strong>{a.reply}</strong></li>{/each}
+					</ul>
+				</div>
+			{/if}
+			<div>
+				<button class="btn ghost sm" onclick={() => (details = !details)} aria-expanded={details}>
+					{details ? 'Hide the changes' : `Show all changes${edits ? ` (${plural(edits, 'edit')})` : ''}`}
+				</button>
+			</div>
+		</section>
+
+		{#if details}
+			<div class="row between">
+				<div class="counts small">
+					{#each Object.entries(review.counts) as [status, n] (status)}
+						<span class="status {status}">{plural(n, STATUS_LABELS[status].toLowerCase() + ' paragraph')}</span>
+					{/each}
+				</div>
+				<button class="btn sm" onclick={classify} disabled={busy || review.classifying}>
+					{busy ? 'Working...' : 'Classify again'}
+				</button>
+			</div>
+			{#if review.original_recreated}
+				<p class="alert small">
+					No stored download was found for this copy, so the original was rendered again from the draft.
+				</p>
+			{/if}
+			{#if review.classify_error}<p class="alert error small">{review.classify_error}</p>{/if}
+
+			<label class="small toggle"><input type="checkbox" bind:checked={onlyChanges} /> Only show changed paragraphs</label>
+
+			{#each sections as s (s.item_ref)}
+				{#if !onlyChanges || s.changed}
+					<section class="card item">
+						<h3>
+							{s.item_ref === 'header' || s.item_ref === 'actions' || s.added ? s.heading : `${s.item_ref}. ${s.heading}`}
+							{#if s.added}<span class="status added">added by the reviewer</span>{/if}
+						</h3>
+						<div class="grid head tiny muted"><span>Draft</span><span>Edited copy</span></div>
+						{#each shown(s.rows) as r (r.id)}
+							<div class="grid">
+								<div class="cell">
+									<span class="status {r.status}">{STATUS_LABELS[r.status]}</span>
+									{#if r.status === 'moved' && r.original_item_ref}<span class="tiny muted">from item {r.original_item_ref}</span>{/if}
+									<p>
+										{#each r.diff as d, i (i)}
+											{#if d.op === 'equal'}{d.text}{:else if d.op === 'delete'}<del>{d.text}</del>{/if}
+										{/each}
+									</p>
+								</div>
+								<div class="cell">
+									<p>
+										{#each r.diff as d, i (i)}
+											{#if d.op === 'equal'}{d.text}{:else if d.op === 'insert'}<ins>{d.text}</ins>{/if}
+										{/each}
+									</p>
+									{#if r.tracked.length}<p class="tiny muted">{plural(r.tracked.length, 'tracked change')}</p>{/if}
+									{#each r.comment_ids as cid (cid)}
+										{@const c = comments.get(cid)}
+										{#if c}<p class="comment tiny"><Icon name="message" size={11} /> <strong>{c.author}:</strong> {c.text}</p>{/if}
+									{/each}
+								</div>
+								{#if r.labels.length}
+									<ul class="labels">
+										{#each r.labels as l (l.id)}
+											<li class="label {l.route}">
+												<details>
+													<summary>{labelTitle(l)}</summary>
+													<div class="small">{l.reason}</div>
+													{#if l.before || l.after}
+														<div class="tiny mono">"{l.before || '—'}" → "{l.after || '—'}"</div>
+													{/if}
+													{#if l.profile_basis}<div class="tiny muted">Profile: {l.profile_basis}</div>{/if}
+													{#if l.support !== 'not_applicable'}
+														<div class="tiny muted">Added content: {l.support === 'transcript' ? 'supported by the transcript' : "the professional's own knowledge"}</div>
+													{/if}
+													{#if l.evidence.length}<div class="tiny muted mono">{l.evidence.map(lineRef).join(', ')}</div>{/if}
+													<div class="tiny muted">{l.source === 'code' ? 'Labelled by a rule' : 'Labelled by the model'}</div>
+												</details>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</div>
+						{/each}
+					</section>
+				{/if}
+			{/each}
+		{/if}
 	{/if}
 </div>
 
@@ -260,6 +278,47 @@
 	h3,
 	h4 {
 		margin: 0;
+	}
+
+	.between {
+		justify-content: space-between;
+	}
+
+	.learned ul {
+		margin: 0.3rem 0 0;
+		padding-left: 1.1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.group {
+		border-left: 3px solid var(--border);
+		padding-left: 0.75rem;
+	}
+
+	.group.candidate {
+		border-color: var(--accent);
+	}
+
+	.group.defect {
+		border-color: var(--warn);
+	}
+
+	.working {
+		animation: pulse 1.6s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		50% {
+			opacity: 0.5;
+		}
+	}
+
+	.count {
+		font-weight: 600;
+		color: var(--accent);
+		margin-left: 0.35rem;
 	}
 
 	.counts {
@@ -295,33 +354,6 @@
 	.status.removed {
 		background: var(--err-bg);
 		color: var(--err-fg);
-	}
-
-	.findings ul {
-		margin: 0.3rem 0 0;
-		padding-left: 1.1rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.45rem;
-	}
-
-	.route {
-		border-left: 3px solid var(--border);
-		padding-left: 0.75rem;
-	}
-
-	.route.candidate {
-		border-color: var(--accent);
-	}
-
-	.route.defect {
-		border-color: var(--warn);
-	}
-
-	.count {
-		font-weight: 600;
-		color: var(--accent);
-		margin: 0 0.3rem;
 	}
 
 	.toggle {
@@ -399,10 +431,5 @@
 	.label summary {
 		cursor: pointer;
 		font-weight: 600;
-	}
-
-	.answer {
-		border-left: 3px solid var(--accent);
-		padding-left: 0.6rem;
 	}
 </style>

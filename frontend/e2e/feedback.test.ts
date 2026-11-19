@@ -49,6 +49,7 @@ function feedback(verdict: string, reason: string | null) {
 		reason,
 		filename: edited ? 'final.docx' : null,
 		comparison: edited ? comparison : null,
+		edited_document_id: edited ? 'ed-1' : null,
 		model: 'gemini-3.1-flash-lite',
 		created_by: 'web-ui',
 		created_at: '2026-11-10T10:00:00Z'
@@ -123,8 +124,8 @@ test('an edited Word copy is uploaded and compared', async ({ page }) => {
 	await page.getByLabel('Edited Word file').setInputFiles('e2e/fixtures/final.docx');
 
 	await expect(page.getByText('Edited copy uploaded')).toBeVisible();
-	await expect(page.getByText('82% of the draft kept; 1 part changed:')).toBeVisible();
-	await expect(page.getByText('+6 / -1 words')).toBeVisible();
+	await expect(page.getByText('82% of the draft kept.')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'See what we learned from your edits' })).toBeVisible();
 	expect(sent).toEqual(['multipart/form-data']);
 });
 

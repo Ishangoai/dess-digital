@@ -87,7 +87,7 @@ def test_formatting_only_is_found_from_tracked_formatting() -> None:
     row = Row("Kept.", "Kept.", status="unchanged", tracked=[{"kind": "format", "text": ""}])
     [h] = hunks([row])
     found = code_label(h, NAMES, SETTINGS)
-    assert found is not None and found.pattern == "formatting only"
+    assert found is not None and found.pattern == "Formatting changes only"
 
 
 def test_cheap_cases_are_labelled_in_code() -> None:
@@ -95,16 +95,16 @@ def test_cheap_cases_are_labelled_in_code() -> None:
         "wording_style",
         ["WS4"],
         "profile_not_applied",
-        "name replaced by role",
+        "Use roles, not names, in ordinary reporting",
     )
     assert labelled("Sarah Mensah", "the Board")[2] == "profile_not_applied"
     assert label("the board", "the Board") == (
         "wording_style",
         ["WS6"],
         "profile_silent",
-        "capitalisation of 'the board'",
+        "Capitals: write 'the Board'",
     )
-    assert labelled("approved,", "approved;")[3] == "punctuation or spacing"
+    assert labelled("approved,", "approved;")[3] == "Punctuation and spacing"
     assert (
         labelled("12/03/2026", "12 March 2026")[2] == "profile_not_applied"
     )  # house style is LONG
@@ -156,8 +156,8 @@ class Label:
 
 
 def test_repeated_edits_are_one_finding_with_a_count() -> None:
-    labels = [Label(f"Director {n}", "the Board", "code", "name replaced by role", item=str(n))
-              for n in range(1, 15)]  # fmt: skip
+    role = "Use roles, not names, in ordinary reporting"
+    labels = [Label(f"Director {n}", "the Board", "code", role, item=str(n)) for n in range(1, 15)]
     labels += [
         Label("approved", "It was resolved that", "model", "resolution wording",
               cause="profile_silent", dimensions=["WS5"], route="candidate", item="2"),
@@ -169,7 +169,7 @@ def test_repeated_edits_are_one_finding_with_a_count() -> None:
 
     assert [(f.pattern, f.count, f.route) for f in findings] == [
         ("resolution wording", 2, "candidate"),
-        ("name replaced by role", 14, "defect"),
+        ("Use roles, not names, in ordinary reporting", 14, "defect"),
     ]
     assert findings[0].items == ["2", "7"]
 
@@ -178,7 +178,7 @@ def test_similar_patterns_with_the_same_cause_are_one_finding() -> None:
     labels = [
         Label("Ruth Calder", "the Risk Committee Chair", "model", "name replaced with role title"),
         Label("Stephen Wren", "a director", "model", "director name replaced with role"),
-        Label("Martin Vale", "the SID", "code", "name replaced by role"),
+        Label("Martin Vale", "the SID", "code", "Use roles, not names, in ordinary reporting"),
         Label("The Board approved", "It was resolved that", "model",
               "formal resolution phrasing introduced", cause="profile_silent",
               dimensions=["WS5"], route="candidate", row="8.p4"),
@@ -194,5 +194,7 @@ def test_similar_patterns_with_the_same_cause_are_one_finding() -> None:
 def test_roles_the_rules_recognise() -> None:
     for role in ["the Risk Committee Chair", "an independent non-executive director",
                  "the Chief Operating Officer", "the Board", "Directors"]:  # fmt: skip
-        assert labelled("Ruth Calder", role)[3] == "name replaced by role", role
+        assert labelled("Ruth Calder", role)[3] == "Use roles, not names, in ordinary reporting", (
+            role
+        )
     assert label("Ruth Calder", "Ruth Calder-Smith") is None

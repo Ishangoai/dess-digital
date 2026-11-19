@@ -4,9 +4,11 @@ Cheap cases are labelled in code; the rest get one model call per agenda item, i
 Every call is recorded with the run, so it shows in the AI activity view.
 """
 
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from sqlalchemy import Connection, Engine
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -171,3 +173,20 @@ def _message(
     parts.append(f"<edits>\n{labels.edits_block(item_hunks, comments)}\n</edits>")
     parts.append(f"<task>\n{labels.TASK_CLASSIFY.strip()}\n</task>")
     return "\n\n".join(parts)
+
+
+def classify_in_background(bind: Engine | Connection, edited_id: uuid.UUID, llm: LLMClient) -> None:
+    """Classify an uploaded copy after the upload response (FastAPI BackgroundTasks).
+
+    Uses its own session: the request's session is closed by the time this runs.
+    """
+    with Session(bind) as db:
+        edited = db.get(EditedDocument, edited_id)
+        if edited is None:
+            return
+        try:
+            classify(db, llm, edited.run, edited)
+        except Exception as e:  # never leave it looking as if it is still working
+            db.rollback()
+            edited.classify_error = f"classification failed: {e}"
+            db.commit()

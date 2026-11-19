@@ -253,22 +253,29 @@ def add_feedback(run_id: uuid.UUID, body: FeedbackIn, db: DB) -> FeedbackOut:
 async def upload_final(
     run_id: uuid.UUID,
     db: DB,
+    llm: LLM,
+    tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(description="The edited Word copy of this draft (.docx)")],
     by: Annotated[str | None, Form(max_length=255)] = None,
 ) -> FeedbackOut:
-    """Store the professional's edited Word copy and line it up with the exact original."""
+    """Store the professional's edited Word copy and line it up with the exact original.
+
+    Its edits are then classified in the background (MINUTES_AUTO_CLASSIFY).
+    """
     run = _run(db, run_id)
     data = await file.read(settings.minutes_max_upload_bytes + 1)
     if len(data) > settings.minutes_max_upload_bytes:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "file is too large")
     try:
-        _, feedback = edits_svc.upload_edited(db, run, file.filename or "final.docx", data, by)
+        edited, feedback = edits_svc.upload_edited(db, run, file.filename or "final.docx", data, by)
     except svc.InvalidStateError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     except UnsupportedFileError as e:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
     except WrongDraftError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    if settings.minutes_auto_classify:
+        tasks.add_task(edit_classify.classify_in_background, db.get_bind(), edited.id, llm)
     return FeedbackOut.model_validate(feedback)
 
 

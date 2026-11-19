@@ -93,8 +93,10 @@ class EditLabel(BaseModel):
         "ordinary reporting'. Null for meeting_only."
     )
     pattern: str = Field(
-        description="The change in general terms, 3 to 8 words, worded the same for the same "
-        "change elsewhere, e.g. 'limits restored to an approval'."
+        description="What the edit shows, as a short plain instruction (at most 12 words) the "
+        "professional would recognise, worded the same for the same change elsewhere, e.g. "
+        "'Record the limits and conditions of each approval' or 'Correct the revenue figure "
+        "in item 4'."
     )
     reason: str = Field(description="One sentence.")
 
@@ -133,7 +135,9 @@ point to a provision that already asks for the change.
 - support, for added content: transcript if the evidence supports it (cite the lines), \
 professional_knowledge if it does not. not_applicable for other kinds.
 - evidence: the lines the label rests on.
-- pattern: the change in general terms, the same words for the same change elsewhere.
+- pattern: what the edit shows, as a short plain instruction the professional would \
+recognise ("Write approvals as 'It was resolved that'", "Record who owns each action"). Use \
+the same words for the same change elsewhere. It is shown to the professional on its own.
 - reason: one sentence.
 """
 
@@ -238,7 +242,7 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
             EditKind.STRUCTURE_LAYOUT,
             [Dimension.WS6],
             EditCause.MEETING_ONLY,
-            "formatting only",
+            "Formatting changes only",
             "Only the formatting changed, not the words.",
         )
     if not before or not after:
@@ -248,7 +252,7 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
             EditKind.WORDING_STYLE,
             [Dimension.WS6],
             EditCause.MEETING_ONLY,
-            "punctuation or spacing",
+            "Punctuation and spacing",
             "Only punctuation or spacing changed.",
         )
     if before.lower() == after.lower():
@@ -256,7 +260,7 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
             EditKind.WORDING_STYLE,
             [Dimension.WS6],
             EditCause.PROFILE_SILENT,
-            f"capitalisation of '{after.lower()}'",
+            f"Capitals: write '{after}'",
             f"'{before}' was changed to '{after}': a house capitalisation choice.",
         )
     if (d1 := parse_date(before)) and d1 == parse_date(after):
@@ -266,7 +270,7 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
                 EditKind.WORDING_STYLE,
                 [Dimension.WS6],
                 EditCause.PROFILE_NOT_APPLIED,
-                f"date written as {presentation.date_style}",
+                f"Write dates as {DATE_EXAMPLES[presentation.date_style]}",
                 "The profile's date style was not applied.",
                 f"Presentation: date style {presentation.date_style}",
             )
@@ -274,7 +278,7 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
             EditKind.WORDING_STYLE,
             [Dimension.WS6],
             EditCause.PROFILE_SILENT,
-            f"date written as {_date_style(after)}",
+            f"Write dates as {DATE_EXAMPLES[_date_style(after)]}",
             "The date was rewritten in a different style.",
         )
     if _is_name(before, names) and ROLE.match(after):
@@ -282,11 +286,20 @@ def code_label(h: Hunk, names: set[str], presentation: PresentationSettings) -> 
             EditKind.WORDING_STYLE,
             [Dimension.WS4],
             EditCause.PROFILE_NOT_APPLIED,
-            "name replaced by role",
+            ROLE_PATTERN,
             f"'{before}' became '{after}': WS4 asks for roles in ordinary reporting.",
             "WS4 F: use roles for ordinary reporting and actions where unambiguous",
         )
     return None
+
+
+ROLE_PATTERN = "Use roles, not names, in ordinary reporting"
+DATE_EXAMPLES = {
+    DateStyle.LONG: "'5 November 2026'",
+    DateStyle.ORDINAL: "'5th November 2026'",
+    DateStyle.NUMERIC: "'05/11/2026'",
+    "month first": "'November 5, 2026'",
+}
 
 
 def attendee_names(header: MeetingHeader) -> set[str]:

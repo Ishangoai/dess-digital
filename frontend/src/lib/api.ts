@@ -354,6 +354,8 @@ export interface EditedSummary {
 	original_recreated: boolean;
 	counts: Partial<Record<ParagraphStatus, number>>;
 	classified_at: string | null;
+	/** Automatic classification after the upload has not finished yet. */
+	classifying: boolean;
 }
 
 export interface EditReview extends EditedSummary {
