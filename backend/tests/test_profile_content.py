@@ -82,3 +82,8 @@ def test_committed_json_schema_matches_model() -> None:
     """Regenerate with: uv run python -m app.minutes.profile_content --write"""
     committed = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert committed == export_json_schema()
+
+
+def test_a_removed_lessons_field_still_loads(profile_content: ProfileContent) -> None:
+    stored = profile_content.model_dump(mode="json") | {"lessons": None}
+    assert ProfileContent.model_validate(stored) == profile_content

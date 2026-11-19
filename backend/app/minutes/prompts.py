@@ -27,13 +27,6 @@ conversation, repetition and incidental operational detail. Keep the distinction
 proposal, discussion, noting, deferral and approval."""
 
 
-LESSONS_HEADING = """# House lessons for this organisation
-
-Learned from reviewers' corrections to earlier drafts of this organisation's minutes and \
-confirmed by a person. They refine house style and practice within the standards above; where \
-they conflict, the standards prevail."""
-
-
 @dataclass(frozen=True)
 class PromptContext:
     profile: ProfileContent
@@ -43,11 +36,8 @@ class PromptContext:
     examples: dict[str, list[str]] = field(default_factory=dict)
 
     def system(self) -> str:
-        """Same for every call: our preamble, the full minuting logic, then any house lessons."""
-        text = f"{PREAMBLE}\n\n{self.profile.logic}"
-        if self.profile.lessons:
-            text += f"\n\n{LESSONS_HEADING}\n\n{self.profile.lessons}"
-        return text
+        """Same for every call: our preamble, then the profile's full minuting logic."""
+        return f"{PREAMBLE}\n\n{self.profile.logic}"
 
     def evidence(self) -> str:
         info = self.meeting_info.model_dump_json(exclude_none=True, indent=2)

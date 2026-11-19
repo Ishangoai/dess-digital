@@ -84,11 +84,6 @@ class ProfileContent(_Strict):
     logic: str = Field(
         min_length=1, description="The full minuting logic in markdown, sent on every LLM call."
     )
-    lessons: str | None = Field(
-        default=None,
-        description="House lessons learned from this organisation's feedback (markdown list), "
-        "confirmed by a person. Sent after the logic.",
-    )
     presentation: PresentationSettings = Field(default_factory=PresentationSettings)
 
     @model_validator(mode="before")
@@ -97,6 +92,8 @@ class ProfileContent(_Strict):
         """Read schema 1 profiles (structured dimensions) by joining them into one text."""
         if isinstance(data, dict) and "minuting_policy" in data:
             return _upgrade_v1(data)
+        if isinstance(data, dict) and "lessons" in data:  # a field briefly used, now removed
+            return {k: v for k, v in data.items() if k != "lessons"}
         return data
 
 

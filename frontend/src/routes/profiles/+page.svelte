@@ -57,7 +57,7 @@
 		<h1>Minutes profiles</h1>
 		<p class="muted">
 			A profile holds the minuting logic a draft follows. Drafts use the latest confirmed version.
-			Give each organisation its own profile so its house lessons and examples stay its own.
+			Give each organisation its own profile so what is learned from its reviewers stays its own.
 		</p>
 	</div>
 
@@ -100,8 +100,8 @@
 		<section class="card stack">
 			<h2>New organisation profile</h2>
 			<p class="small muted">
-				Starts as a copy of the standard. Lessons learned from this organisation's feedback are added
-				to it, never to the standard.
+				Starts as a copy of the standard. Changes learned from this organisation's reviewers apply to
+				it, never to the standard.
 			</p>
 			<form class="stack create" onsubmit={create}>
 				<label class="field">
