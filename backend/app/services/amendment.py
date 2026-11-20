@@ -141,7 +141,7 @@ def check_proposal_conflicts(
         f"  Proposed text: {proposal.proposed_text or 'N/A (remove)'}\n"
         "\n"
         "Does this proposal CONTRADICT or DUPLICATE any existing provision in this dimension?\n"
-        'Reply with has_conflict: '
+        "Reply with has_conflict: "
         'true/false, conflict_type ("contradiction" or "duplicate" or null),'
         " and a brief warning explaining the conflict (or null if none)."
     )

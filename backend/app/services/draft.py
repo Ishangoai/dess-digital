@@ -323,13 +323,15 @@ def diff_mapping(original: EvidenceMap, edited: EvidenceMap) -> list[str]:
             if es.item_ref != os.item_ref:
                 changes.append(
                     f"reassigned from Item '{os.item_ref or 'None'}' "
-                    f"to Item '{es.item_ref or 'None'}'"                )
+                    f"to Item '{es.item_ref or 'None'}'"
+                )
             if es.association != os.association:
                 changes.append(f"association changed from '{os.association}' to '{es.association}'")
             if (es.source.start, es.source.end) != (os.source.start, os.source.end):
                 changes.append(
-                f"lines changed from {os.source.start}-{os.source.end} "
-                f"to {es.source.start}-{es.source.end}"                )
+                    f"lines changed from {os.source.start}-{os.source.end} "
+                    f"to {es.source.start}-{es.source.end}"
+                )
             if es.summary != os.summary:
                 changes.append(f'summary updated from "{os.summary}" to "{es.summary}"')
             if changes:

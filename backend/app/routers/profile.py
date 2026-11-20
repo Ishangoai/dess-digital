@@ -234,7 +234,7 @@ def apply_amendment_set(
     slug: str, set_id: _uuid.UUID, body: ApplySetRequest, db: DB
 ) -> ProfileVersionOut:
     """
-    Apply all accepted proposals in an amendment set 
+    Apply all accepted proposals in an amendment set
     to produce a new confirmed profile version.
     """
     _profile(db, slug)

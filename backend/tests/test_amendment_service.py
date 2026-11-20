@@ -188,6 +188,7 @@ def test_reject_defer_excludes_from_new_version(db: Session, seeded_profile: tup
     assert new_version.change_summary is not None
     assert "Rejected change." not in new_version.change_summary
 
+
 # ---------------------------------------------------------------------------
 # Test 4: Deferred proposals excluded
 # ---------------------------------------------------------------------------
@@ -232,8 +233,7 @@ def test_conflict_warning_stored(db: Session, seeded_profile: tuple) -> None:
         has_conflict=True,
         conflict_type="duplicate",
         warning=(
-            "This provision duplicates ws4-names-for-actions "
-            "which already says the same thing."
+            "This provision duplicates ws4-names-for-actions which already says the same thing."
         ),
     )
     llm = make_llm(scripted_response=conflict_response)
