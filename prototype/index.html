@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>DESS Minutes prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* ---- app.css ---- */
+:root {
+	--bg: #f4f5f7; --surface: #ffffff; --surface-2: #f9fafb; --sidebar: #fbfbfc;
+	--border: #e5e7eb; --border-strong: #d1d5db; --text: #111827; --text-2: #374151; --muted: #6b7280; --faint: #9ca3af;
+	--accent: #2d4fd6; --accent-hover: #2342bb; --accent-soft: #eef1fd; --accent-ring: rgba(45, 79, 214, 0.18);
+	--ok: #15803d; --ok-bg: #e7f6ec; --ok-fg: #166534;
+	--warn: #b45309; --warn-bg: #fdf3e1; --warn-fg: #92400e;
+	--err: #b91c1c; --err-bg: #fdecec; --err-fg: #991b1b;
+	--info-bg: #eaf0fe; --info-fg: #1e40af;
+	--mark: #fde68a; --mark-soft: #fef6d8;
+	--radius: 12px; --radius-sm: 8px;
+	--shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.05);
+	--shadow: 0 1px 3px rgba(17, 24, 39, 0.06), 0 6px 16px rgba(17, 24, 39, 0.05);
+	--shadow-lg: 0 12px 32px rgba(17, 24, 39, 0.12);
+	--font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+	--mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { line-height: 1.25; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 1.5rem; font-weight: 650; }
+h2 { font-size: 1.05rem; font-weight: 600; }
+h3 { font-size: 0.9rem; font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); text-decoration: none; cursor: pointer; }
+a:hover { text-decoration: underline; }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow-sm); }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.stack.tight { gap: 0.5rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+.row.tight { gap: 0.4rem; }
+.contained { max-width: 1000px; margin: 0 auto; }
+.spacer { flex: 1; }
+.grow { flex: 1; min-width: 240px; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.tiny { font-size: 0.75rem; }
+.eyebrow { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 0.85em; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; font-weight: 500; color: var(--text-2); }
+input[type='text'], select, textarea { font: inherit; font-size: 0.9rem; padding: 0.5rem 0.7rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: 100%; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+textarea { resize: vertical; }
+.btn { font-size: 0.88rem; font-weight: 500; padding: 0.5rem 0.95rem; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; white-space: nowrap; box-shadow: var(--shadow-sm); transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.btn:hover:not(:disabled) { background: var(--surface-2); border-color: var(--faint); text-decoration: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--muted); }
+.btn.ghost:hover:not(:disabled) { background: rgba(17, 24, 39, 0.05); border-color: transparent; color: var(--text); }
+.btn.lg { padding: 0.65rem 1.2rem; font-size: 0.95rem; }
+.btn.sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.on-ok { background: var(--ok-bg); border-color: #b7e2c4; color: var(--ok-fg); }
+.btn.on-err { background: var(--err-bg); border-color: #f5c2c2; color: var(--err-fg); }
+.link-btn { font: inherit; font-size: 0.85rem; background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; gap: 0.3rem; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.tiny { font-size: 0.75rem; }
+.alert { padding: 0.75rem 1rem; border-radius: var(--radius-sm); font-size: 0.88rem; }
+.alert.info { background: var(--info-bg); color: var(--info-fg); }
+.alert.ok { background: var(--ok-bg); color: var(--ok-fg); }
+.chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.76rem; font-weight: 500; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap; }
+.ref { font-family: var(--mono); font-size: 0.72rem; font-weight: 500; padding: 0.1rem 0.4rem; border-radius: 5px; background: #f1f2f4; color: var(--text-2); white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th, td { text-align: left; padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+.spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+svg.i { flex-shrink: 0; }
+
+/* ---- layout ---- */
+.shell { --side-w: 264px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; background: linear-gradient(to right, var(--sidebar) calc(var(--side-w) - 1px), var(--border) calc(var(--side-w) - 1px) var(--side-w), var(--bg) var(--side-w)); }
+.side { position: sticky; top: 0; height: 100vh; background: var(--sidebar); border-right: 1px solid var(--border); }
+.main { min-width: 0; padding: 1rem 2.5rem 4rem; }
+.mobile-bar, .scrim { display: none; }
+
+/* ---- sidebar ---- */
+.sidebar { display: flex; flex-direction: column; height: 100%; padding: 1rem 0.75rem; gap: 1rem; }
+.sidebar .brand { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.5rem; font-weight: 650; font-size: 0.98rem; color: var(--text); }
+.sidebar .brand:hover { text-decoration: none; }
+.logo { width: 1.75rem; height: 1.75rem; border-radius: 7px; display: grid; place-items: center; background: linear-gradient(135deg, #2d4fd6, #5b3fd1); color: #fff; font-size: 0.85rem; font-weight: 700; }
+.sidebar .new { width: 100%; }
+.section-head { display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem; }
+.count { font-size: 0.72rem; color: var(--faint); }
+.list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.item { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); color: var(--text-2); }
+.item:hover { background: rgba(17, 24, 39, 0.04); text-decoration: none; }
+.item.active { background: var(--surface); box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border); }
+.item .title { font-size: 0.86rem; font-weight: 500; color: var(--text); line-height: 1.35; }
+.item .meta { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
+.dot.completed { background: var(--ok); }
+.dot.awaiting_mapping_review { background: var(--warn); }
+.foot { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.foot a { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--text-2); }
+.foot a:hover, .foot a.active { background: rgba(17, 24, 39, 0.04); color: var(--text); text-decoration: none; }
+
+/* ---- prototype strip ---- */
+.proto { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; padding: 0.4rem 0.5rem 0.4rem 0.75rem; margin: 0 auto 1.5rem; max-width: 1100px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); font-size: 0.8rem; color: var(--muted); }
+.proto .badge { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn-fg); background: var(--warn-bg); padding: 0.1rem 0.45rem; border-radius: 4px; }
+.proto select { width: auto; max-width: 300px; font-size: 0.8rem; padding: 0.25rem 0.5rem; }
+
+/* ---- new minutes ---- */
+.page { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+.page .head { display: flex; flex-direction: column; gap: 0.4rem; }
+.page .head p { max-width: 60ch; }
+.form { display: flex; flex-direction: column; gap: 1.1rem; padding: 1.5rem; }
+.drops, .extra { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.extra { gap: 0.75rem; }
+.details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.9rem; }
+.details .wide { grid-column: 1 / -1; max-width: 360px; }
+.adders { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; }
+.actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 0.25rem; flex-wrap: wrap; }
+
+/* ---- file drop ---- */
+.target { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 0.6rem; min-height: 148px; padding: 1.25rem; border: 1.5px dashed var(--border-strong); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; transition: border-color 0.15s, background 0.15s; width: 100%; font: inherit; color: inherit; }
+.target:hover { border-color: var(--accent); background: var(--accent-soft); }
+.target-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); color: var(--accent); }
+.target-text { display: flex; flex-direction: column; gap: 0.15rem; }
+.target-label { font-weight: 600; font-size: 0.92rem; }
+.browse { color: var(--accent); font-weight: 500; }
+.compact .target { flex-direction: row; justify-content: flex-start; text-align: left; min-height: 0; padding: 0.7rem 0.9rem; }
+.compact .target-icon { width: 2rem; height: 2rem; }
+.compact .target-label { font-size: 0.86rem; }
+.file { display: flex; align-items: center; gap: 0.75rem; min-height: 148px; padding: 1rem 1.1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.compact .file { min-height: 0; padding: 0.6rem 0.8rem; }
+.file-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 10px; background: var(--ok-bg); color: var(--ok); flex-shrink: 0; }
+.compact .file-icon { width: 2rem; height: 2rem; }
+.file-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.file-text .name { font-size: 0.88rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.files li { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); }
+.files .name { flex: 1; color: var(--text); font-size: 0.84rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- meeting page ---- */
+.draft-page { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.25rem; }
+.dhead { display: flex; flex-direction: column; gap: 0.6rem; }
+.title-row { display: flex; align-items: center; gap: 0.5rem 0.75rem; min-width: 0; flex-wrap: wrap; }
+.title-row h1 { font-size: 1.35rem; }
+.title-row .meta { color: var(--muted); }
+.title-row .meta a { color: var(--muted); }
+.title-row .count { font-size: 0.7rem; font-weight: 600; padding: 0 0.35rem; border-radius: 999px; background: #f1f2f4; color: var(--muted); }
+.sep { margin: 0 0.3rem; color: var(--faint); }
+.stepper { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; list-style: none; margin: 0 0 0 -0.5rem; padding: 0; font-size: 0.8rem; }
+.stepper .sepl { width: 1.25rem; height: 1px; background: var(--border-strong); }
+.stepper a, .stepper .step { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.5rem; border-radius: 999px; color: var(--faint); }
+.stepper a:hover { background: rgba(17, 24, 39, 0.05); text-decoration: none; }
+.stepper .sdot { display: grid; place-items: center; width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--border-strong); font-size: 0.64rem; font-weight: 600; }
+.stepper .done a, .stepper .done .step { color: var(--text-2); }
+.stepper .done .sdot { background: var(--ok); border-color: var(--ok); color: #fff; }
+.stepper .current a, .stepper .current .step { color: var(--text); font-weight: 600; }
+.stepper .current .sdot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.stepper .here .step { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); color: var(--text); font-weight: 600; }
+
+/* ---- working ---- */
+.working { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.6rem; padding: 3rem 2rem; }
+.working h2 { font-size: 1.25rem; }
+.working p { max-width: 48ch; }
+.pulse-ic { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); margin-bottom: 0.5rem; animation: breathe 1.6s ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 0 10px rgba(45, 79, 214, 0.08); } }
+
+/* ---- mapping ---- */
+.layout { display: flex; flex-direction: column; gap: 1rem; }
+.lead { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 1.5rem; flex-wrap: wrap; }
+.lead p { color: var(--muted); max-width: 72ch; }
+.counts { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.counts span, .attn-pill { font-size: 0.78rem; color: var(--muted); padding: 0.2rem 0.6rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+.counts strong { color: var(--text); font-weight: 600; }
+.attn-pill { display: inline-flex; align-items: center; gap: 0.3rem; border-color: #f3d39b; background: var(--warn-bg); color: var(--warn-fg); cursor: pointer; font: inherit; font-size: 0.78rem; }
+.attn-pill strong { color: var(--warn-fg); }
+.all-good { display: flex; align-items: center; gap: 0.4rem; color: var(--ok-fg); }
+.group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+.group.attention { border-color: #f3d39b; }
+.g-head { display: flex; align-items: center; gap: 0.65rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface-2); list-style: none; }
+.g-head::-webkit-details-marker { display: none; }
+details.group > summary { cursor: pointer; }
+details.group:not([open]) > summary { border-bottom: none; }
+details.group[open] > summary svg:last-child { transform: rotate(180deg); }
+.attention .g-head { background: var(--warn-bg); border-color: #f3d39b; }
+.g-ref { display: grid; place-items: center; min-width: 1.6rem; height: 1.6rem; padding: 0 0.35rem; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); font-size: 0.78rem; font-weight: 600; color: var(--text-2); }
+.g-ref.warn { color: var(--warn); border-color: #f3d39b; }
+.passages { list-style: none; margin: 0; padding: 0; }
+.passage { border-top: 1px solid var(--border); padding: 0.75rem 1rem; }
+.passages .passage:first-child { border-top: none; }
+.p-main { display: flex; align-items: flex-start; gap: 0.8rem; }
+.p-main > .ref { margin-top: 0.15rem; min-width: 4.5rem; text-align: center; }
+.p-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.p-body p { font-size: 0.9rem; color: var(--text); }
+.p-meta { display: flex; align-items: center; gap: 0.6rem; }
+.assoc { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px; background: #f1f2f4; color: var(--text-2); }
+.assoc.procedural { background: var(--info-bg); color: var(--info-fg); }
+.excerpt { white-space: pre-wrap; font-family: var(--font); font-size: 0.82rem; line-height: 1.55; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.7rem 0.85rem; margin: 0.6rem 0 0 5.3rem; max-height: 260px; overflow: auto; }
+.file-under { width: auto; max-width: 220px; font-size: 0.8rem; padding: 0.3rem 0.5rem; }
+.actionbar { position: sticky; bottom: 1rem; z-index: 10; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.75rem 0.85rem 0.75rem 1.1rem; margin-top: 0.5rem; background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+
+/* ---- minutes ---- */
+.mlayout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1.5rem; align-items: start; }
+.paper { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); padding: 3rem 3.5rem; position: relative; }
+.doc-actions { position: absolute; top: 0.9rem; right: 0.9rem; display: flex; gap: 0.3rem; }
+.rail { position: sticky; top: 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.panel-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 0.9rem; color: var(--text-2); list-style: none; }
+.panel-head::-webkit-details-marker { display: none; }
+details.panel > .panel-head { cursor: pointer; }
+.panel-head h3 { flex: 1; }
+details.panel[open] > .panel-head, section.panel > .panel-head { border-bottom: 1px solid var(--border); }
+details.panel[open] > .panel-head svg:last-child { transform: rotate(180deg); }
+.panel-body { display: flex; flex-direction: column; gap: 0.8rem; padding: 0.8rem 0.9rem; }
+.questions { list-style: none; margin: 0; padding: 0.35rem; }
+.q { all: unset; box-sizing: border-box; display: flex; gap: 0.6rem; width: 100%; padding: 0.6rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.86rem; line-height: 1.45; }
+.q:hover { background: var(--surface-2); }
+.q.active { background: var(--mark-soft); box-shadow: inset 3px 0 0 var(--warn); }
+.q-num { display: grid; place-items: center; flex-shrink: 0; width: 1.3rem; height: 1.3rem; border-radius: 50%; background: var(--mark); color: var(--warn-fg); font-size: 0.68rem; font-weight: 700; }
+.q-body { display: flex; flex-direction: column; gap: 0.15rem; }
+.finding { display: flex; flex-direction: column; gap: 0.3rem; padding-left: 0.7rem; border-left: 2px solid var(--border); }
+.sig { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.05rem 0.4rem; border-radius: 4px; background: #f1f2f4; color: var(--text-2); }
+.sig.material { background: var(--err-bg); color: var(--err-fg); }
+.decision { color: var(--muted); }
+.decision strong { color: var(--ok-fg); }
+.minutes { font-family: var(--serif); font-size: 1.02rem; line-height: 1.65; color: #1f2328; }
+.m-head { padding-bottom: 1.25rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+.minutes h1 { font-family: var(--serif); font-size: 1.55rem; font-weight: 600; letter-spacing: 0; margin-bottom: 0.4rem; padding-right: 9rem; }
+.minutes .when { color: var(--muted); margin-bottom: 0.9rem; }
+.minutes dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; font-size: 0.95rem; }
+.minutes dt { font-family: var(--font); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding-top: 0.2rem; }
+.minutes dd { margin: 0; }
+.minutes h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; letter-spacing: 0; margin: 1.6rem 0 0.6rem; }
+.minutes .num { display: inline-block; min-width: 1.6rem; color: var(--muted); }
+.minutes p { margin: 0 0 0.7rem; }
+.minutes .outcome { font-weight: 600; }
+.anchor { all: unset; background: var(--mark-soft); border-bottom: 2px solid var(--mark); cursor: pointer; border-radius: 2px; scroll-margin: 6rem; }
+.anchor.active { background: var(--mark); border-color: var(--warn); }
+.minutes sup { font-family: var(--font); font-size: 0.62rem; font-weight: 700; color: var(--warn-fg); margin-left: 0.1rem; }
+.minutes table { font-family: var(--font); font-size: 0.86rem; margin-top: 0.25rem; }
+.minutes td.open { color: var(--faint); font-style: italic; }
+
+/* ---- edits ---- */
+.route { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+.route-head { display: flex; flex-direction: column; gap: 0.15rem; }
+.patterns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.patterns li { display: flex; flex-direction: column; gap: 0.25rem; }
+.refs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chip.times { background: var(--surface); font-weight: 600; }
+.chip.status-changed { background: var(--accent-soft); color: var(--accent); }
+.chip.status-added { background: var(--ok-bg); color: var(--ok-fg); }
+.eyebrow.route-candidate_rule { color: var(--accent); }
+.eyebrow.route-draft_mistake { color: var(--warn-fg); }
+.thread { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.5rem 0.7rem; border-left: 2px solid var(--mark); background: var(--mark-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.thread p:first-child { display: flex; align-items: center; gap: 0.35rem; }
+.reply { padding-left: 0.6rem; }
+.intro { max-width: 640px; }
+
+/* ---- profiles and proposals ---- */
+.active-tag { margin-left: 0.4rem; font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--ok-bg); color: var(--ok-fg); }
+.changed-tag { font-size: 0.7rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; background: var(--mark); color: var(--warn-fg); }
+tr.selected { background: var(--accent-soft); }
+.dims { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.dims li { padding: 0.3rem 0.5rem; border-radius: 6px; font-size: 0.9rem; }
+.dims li.changed { background: var(--mark-soft); box-shadow: inset 2px 0 0 var(--mark); }
+.dims .add { font-size: 0.84rem; color: var(--text-2); margin-top: 0.15rem; }
+ul.floors { margin: 0.25rem 0 0; padding-left: 1.1rem; font-size: 0.9rem; }
+.proposal { display: flex; flex-direction: column; gap: 0.6rem; border-left: 3px solid var(--accent); }
+.proposal.style { border-left-color: #7c3aed; }
+.proposal.rejected { opacity: 0.55; }
+.proposal .text { font-size: 0.95rem; }
+.example { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem; }
+.example .ex { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.55rem 0.7rem; background: var(--surface-2); border-radius: var(--radius-sm); }
+.example .minute { font-family: var(--serif); font-size: 0.92rem; line-height: 1.5; }
+.dim-chip { font-family: var(--mono); font-size: 0.72rem; font-weight: 600; }
+.chip.policy { background: var(--info-bg); border-color: #cbd8fb; color: var(--info-fg); }
+.chip.style { background: #f3effe; border-color: #ddd0fb; color: #5b21b6; }
+.chip.from { background: var(--surface); }
+.qcard { display: flex; flex-direction: column; gap: 0.75rem; }
+.opts { display: flex; flex-direction: column; gap: 0.4rem; }
+.opt { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: #fff; cursor: pointer; font-size: 0.88rem; }
+.opt:hover { border-color: var(--border-strong); }
+.opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+.opt input { margin-top: 0.2rem; accent-color: var(--accent); }
+.reply-box { padding: 0.6rem 0.8rem; border-radius: var(--radius-sm); background: #fffafa; border: 1px solid #f5c9c9; font-size: 0.86rem; }
+
+.toast { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%) translateY(150%); background: #111827; color: #fff; padding: 0.65rem 1rem; border-radius: 10px; font-size: 0.85rem; box-shadow: var(--shadow-lg); z-index: 70; transition: transform 0.2s ease; max-width: calc(100% - 2rem); }
+.toast:not(.show) { opacity: 0; visibility: hidden; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 1080px) {
+	.mlayout { grid-template-columns: 1fr; }
+	.rail { position: static; order: -1; }
+	.paper { padding: 2rem 1.5rem; }
+	.minutes h1 { padding-right: 0; padding-top: 2rem; }
+}
+@media (max-width: 860px) {
+	.shell { grid-template-columns: 1fr; background: var(--bg); }
+	.mobile-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+	.side { position: fixed; inset: 0 auto 0 0; width: 280px; z-index: 40; transform: translateX(-100%); transition: transform 0.2s ease; }
+	.side.open { transform: none; box-shadow: var(--shadow-lg); }
+	.scrim.open { display: block; position: fixed; inset: 0; z-index: 30; border: none; background: rgba(17, 24, 39, 0.35); }
+	.main { padding: 1rem 1rem 3rem; }
+}
+@media (max-width: 640px) {
+	.drops, .extra, .details, .example { grid-template-columns: 1fr; }
+	.p-main { flex-wrap: wrap; }
+	.excerpt { margin-left: 0; }
+	.proto select { max-width: 100%; flex: 1; }
+	.btn { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+	<header class="mobile-bar">
+		<button class="btn ghost sm" data-act="menu" aria-label="Open menu" id="menuBtn"></button>
+		<b>DESS Minutes</b>
+	</header>
+	<aside class="side" id="side"></aside>
+	<div class="scrim" id="scrim" data-act="closeMenu"></div>
+	<main class="main">
+		<div class="proto" id="proto"></div>
+		<div id="view"></div>
+	</main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ================= icons (from the app's Icon component) ================= */
+const PATHS = {
+	plus: ['M5 12h14', 'M12 5v14'], x: ['M18 6 6 18', 'm6 6 12 12'], check: ['M20 6 9 17l-5-5'],
+	file: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M16 13H8', 'M16 17H8', 'M10 9H8'],
+	upload: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm17 8-5-5-5 5', 'M12 3v12'],
+	download: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'm7 10 5 5 5-5', 'M12 15V3'],
+	chevronDown: ['m6 9 6 6 6-6'], chevronLeft: ['m15 18-6-6 6-6'], chevronRight: ['m9 18 6-6-6-6'],
+	alert: ['M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0', 'M12 8v4', 'M12 16h.01'],
+	pencil: ['M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z'], menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
+	message: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'],
+	book: ['M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20'],
+	layers: ['m12 2 10 5-10 5L2 7z', 'm2 17 10 5 10-5', 'm2 12 10 5 10-5'],
+	panelLeft: ['M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 3v18'],
+	eye: ['M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0', 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0'],
+	arrowRight: ['M5 12h14', 'm12 5 7 7-7 7'],
+	shield: ['M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z', 'm9 12 2 2 4-4']
+};
+const I = (name, size = 16) => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name].map((d) => `<path d="${d}"/>`).join('')}</svg>`;
+
+/* ================= DESS Standard (titles and hard floors) ================= */
+const MP = [['MP1', 'Meeting and business context'], ['MP2', 'Information and evidential basis'], ['MP3', 'Materiality and proportionality'], ['MP4', 'Outcomes and decisions'], ['MP5', 'Decision reasoning and relevant considerations'], ['MP6', 'Challenge and oversight'], ['MP7', 'Actions and delegation'], ['MP8', 'Governance and procedure'], ['MP9', 'Boundaries and integrity of the record']];
+const WS = [['WS1', 'Voice, tense and tone'], ['WS2', 'Structure and sequence'], ['WS3', 'Concision, clarity and explanation'], ['WS4', 'Attribution and reference to participants'], ['WS5', 'Expression of decisions and actions'], ['WS6', 'Document conventions and presentation']];
+const DIM = Object.fromEntries([...MP, ...WS]);
+const FLOORS = [
+	'Do not invent facts, particulars, outcomes, reasons, owners, dates or delegated powers that the evidence does not support.',
+	'Do not omit, soften or sanitise material business, disagreement, dissent, adverse information or unresolved concerns.',
+	"Do not infer approval or any other outcome from silence, a favourable discussion, an agenda label or a paper's proposed resolution.",
+	'Keep later developments separate from the meeting; never retrospectively improve the proceedings.',
+	'Preserve material uncertainty. Where the evidence cannot establish a necessary fact, identify it for professional clarification rather than manufacture certainty.',
+	'Do not assert compliance, quorum, due notice, absence of conflicts or the quality of scrutiny without an evidential basis.',
+	'Do not assume the AI can independently determine legal privilege.',
+	'Customisation or preference cannot override applicable legal, regulatory or governing-document obligations.'
+];
+
+/* ================= simulated transcript ================= */
+const T = [
+	['Margaret Okafor', 'Good morning, everyone. Helen, are we quorate?'],
+	['Helen Brady', 'Yes, five directors present. Tom Reilly has sent apologies; travelling today.'],
+	['Margaret Okafor', "Thank you. Any declarations of interest on today's business?"],
+	['Priya Shah', "Yes. My brother-in-law is a director of AutoStack Systems, one of the two bidders for the Wakefield automation project. I'll step out for item five."],
+	['Margaret Okafor', 'Thank you, Priya. Yes, please leave for that item. Anything else? No. Item two, the September minutes.'],
+	['James Whitcombe', 'One correction. Page three says the pension review would come back in October. We said November.'],
+	['Helen Brady', "That's right. I'll correct it."],
+	['Margaret Okafor', "With that change, are we happy to approve them? Good, approved. Matters arising are all on the action log, and nothing is outstanding that isn't on today's agenda."],
+	['Margaret Okafor', 'Daniel, your report.'],
+	['Daniel Hughes', "Three things. Volumes were up four per cent on last year for the quarter, mainly the retail contracts. The new Doncaster site opened on time on the second of October. And driver recruitment is still our biggest pressure. We're at about eighty-five per cent of establishment."],
+	['Daniel Hughes', "One more thing, and this is off the record for now. Brightway have told us informally that they'll go out to tender on their contract next year. That's about eleven per cent of revenue."],
+	['James Whitcombe', "We can't keep that off the record, Daniel. It's material."],
+	['Margaret Okafor', 'Agreed. Daniel, can you bring a view on the retention plan and the revenue exposure to the January meeting?'],
+	['Daniel Hughes', "Yes, I'll do that."],
+	['Priya Shah', "On drivers, what's agency spend doing?"],
+	['Daniel Hughes', 'Up about three hundred thousand on the half year. Sarah will cover it in the numbers.'],
+	['Margaret Okafor', 'Thank you. We note the report. Sarah.'],
+	['Sarah Lindqvist', 'Revenue for the six months was thirty-eight point four million against a budget of forty point one. EBITDA four point two against four point nine. The shortfall is mostly the late start at Doncaster and agency costs, which are three hundred and ten thousand over budget.'],
+	['Sarah Lindqvist', "Cash is fine. We have nine point six million of headroom on the facility, and the bank have indicated they're comfortable extending it to March 2029, though that isn't signed yet."],
+	['James Whitcombe', 'Is the full-year forecast still credible? The second half looks ambitious given the first.'],
+	['Sarah Lindqvist', "It's tight. I'd put revenue at eighty-one point five for the year, rather than eighty-two point eight in the budget. We'll reforecast properly in December."],
+	['Margaret Okafor', 'So we note the results and the revised outlook, and the reforecast comes in December.'],
+	['Margaret Okafor', "Priya, if you'd step out now for item five. Mark, welcome."],
+	[null, 'Priya Shah left the meeting.'],
+	['Mark Ellis', 'Thank you. Paper B5 asks the board to approve four point two million for automated storage at Wakefield, with AutoStack as preferred supplier. The site is at ninety-four per cent of capacity, and the system lets us take about thirty per cent more volume without a new building.'],
+	['Mark Ellis', "Payback is three point one years. That's on an uptime assumption of ninety-five per cent, which is what AutoStack's reference sites achieve."],
+	['James Whitcombe', "Ninety-five is their best site. What's the payback at eighty-five?"],
+	['Mark Ellis', 'Closer to four and a half years.'],
+	['James Whitcombe', "Then the paper presents the best case as the base case. I'm not comfortable approving four point two million on that."],
+	[null, 'Audio unavailable from 10.19.40 to 10.20.10.'],
+	['Sarah Lindqvist', "It's within the facility, so it's affordable. But I take James's point on the base case."],
+	['Daniel Hughes', "If we don't do this, we'll be turning away volume by next autumn. That's the real cost."],
+	['Margaret Okafor', 'We also had the note from Harrow Lane Solicitors on the Wakefield lease. Helen, can you summarise?'],
+	['Helen Brady', "In short, installing the system doesn't breach the lease, but we'd need landlord consent for the floor works. I'd suggest we don't go into the detail of the advice in the room."],
+	['Margaret Okafor', "Fine. So here's a proposal. We approve the investment with a cap of four point two million. Phase one only to start with, and a break clause in the AutoStack contract after phase one. Daniel and Sarah to agree the final terms together within that cap, and if it goes over, it comes back to the board. And landlord consent before any floor works."],
+	['Daniel Hughes', 'That works.'],
+	['Margaret Okafor', 'James?'],
+	['James Whitcombe', "I won't stand in the way, but I'd like my disagreement recorded. I don't think the payback case has been tested properly."],
+	['Margaret Okafor', 'Of course. Helen, please record that. Mark, can you bring a revised business case at eighty-five per cent uptime?'],
+	['Mark Ellis', 'Yes. The next meeting, or is the end of January all right?'],
+	['Margaret Okafor', "Let's see how it goes."],
+	['Margaret Okafor', "So that's approved on those terms. Priya can come back in."],
+	[null, 'Priya Shah rejoined the meeting.'],
+	['Margaret Okafor', 'Item six, health and safety. Mark.'],
+	['Mark Ellis', 'One reportable incident in the period. A forklift collision at Wakefield on the third of October. An agency worker fractured a wrist. It was reported to the HSE under RIDDOR within the deadline. The investigation found that the pedestrian walkway markings had worn.'],
+	['Mark Ellis', "The markings have been repainted at all three sites and we're bringing in quarterly checks."],
+	['Speaker 4', 'Are near misses being reported at Wakefield? The numbers in the pack look very low for a site that size.'],
+	['Mark Ellis', "I'd have to come back on that."],
+	['Speaker 4', 'I think it needs looking at. Low numbers usually mean low reporting, not a safe site.'],
+	['Margaret Okafor', 'Agreed. Can someone look at near-miss reporting across the sites and bring it back?'],
+	['Mark Ellis', "Sarah's team holds the data, so either of us."],
+	['Margaret Okafor', 'All right. We note the report.'],
+	['Margaret Okafor', 'Any other business?'],
+	['James Whitcombe', 'Back to Wakefield. When the revised case comes, can it include the downside if we only ever get phase one?'],
+	['Mark Ellis', "Yes, I'll include that."],
+	['Sarah Lindqvist', "And the interim dividend. I'd suggest we take it in December, once the reforecast is done."],
+	['Margaret Okafor', 'Agreed, December. Before we close, does anyone know if the car park resurfacing is this week? It was chaos this morning.'],
+	['Daniel Hughes', 'Friday, I believe.'],
+	['Margaret Okafor', 'Good. Thank you all. The next meeting is on the tenth of December. We close at ten thirty-six.']
+];
+const said = (a, b) => T.slice(a - 1, b).map(([s, t]) => s ? `${s}: ${t}` : `[${t}]`).join('\n');
+
+/* ================= the meeting ================= */
+const AGENDA = [
+	['1', 'Welcome, apologies and declarations of interest', [[1, 2, 'Quorum confirmed. Apologies from Tom Reilly.', 'procedural'], [3, 5, 'Priya Shah declares an interest in AutoStack Systems and will leave for item 5.', 'procedural']]],
+	['2', 'Minutes of the meeting held on 17 September 2026 and matters arising', [[5, 8, 'September minutes approved with one correction: the pension review returns in November.', 'primary']]],
+	['3', "Chief Executive's report", [[9, 10, 'Volumes up 4 per cent; Doncaster opened on time; driver staffing at about 85 per cent.', 'primary'], [11, 14, 'Brightway may tender its contract next year (about 11 per cent of revenue). Retention plan to January.', 'primary'], [15, 16, 'Agency spend up about £300,000 for the half year.', 'related']]],
+	['4', 'Financial performance to 30 September 2026', [[17, 19, 'Half-year revenue £38.4m against £40.1m budget. Facility extension indicated, not signed.', 'primary'], [20, 22, 'Challenge on the full-year forecast; revised estimate £81.5m; reforecast in December.', 'primary']]],
+	['5', 'Wakefield warehouse automation (paper B5)', [[23, 24, 'Priya Shah leaves the meeting.', 'procedural'], [25, 29, 'Paper B5 presented. Payback challenged at 85 per cent uptime.', 'primary'], [31, 34, 'Affordability, the cost of not acting, and legal advice on the lease.', 'primary'], [35, 43, 'Approved with conditions and a delegation. James Whitcombe asks for disagreement to be recorded.', 'primary'], [54, 55, 'Revised case to include the downside if only phase one proceeds. Raised under any other business.', 'related']]],
+	['6', 'Health and safety report', [[44, 46, 'RIDDOR-reportable forklift incident at Wakefield; markings repainted.', 'primary'], [47, 52, 'Near misses may be under-reported. A review is to be brought back.', 'primary']]],
+	['7', 'Any other business', [[56, 57, 'Interim dividend deferred to December.', 'primary'], [59, 59, 'Next meeting 10 December 2026. Meeting closed at 10.36 am.', 'procedural']]]
+];
+const ASSOC = { primary: 'Main discussion', related: 'Related', procedural: 'Procedural' };
+const ATTENTION = [
+	{ id: 'n1', ref: 'Item 6', text: 'Lines T47 and T49 are labelled "Speaker 4". The speaker could not be identified from the transcript.' },
+	{ id: 'n2', ref: 'T30', text: 'Audio unavailable from 10.19.40 to 10.20.10, during item 5.' },
+	{ id: 'u1', ref: 'T57-58', text: said(57, 58), uncovered: true }
+];
+
+const QS = [
+	{ item: '5. Wakefield warehouse automation', text: 'Did the Board approve the appointment of AutoStack Systems as preferred supplier, as paper B5 proposed? The Chair referred to "the AutoStack contract", but no appointment was stated.', reply: 'Confirmed with the Chair: the appointment was approved. Added.' },
+	{ item: '5. Wakefield warehouse automation', text: 'By when is the revised business case due? When asked, the Chair replied "Let\'s see how it goes".', reply: 'The January 2027 meeting.' },
+	{ item: '6. Health and safety report', text: 'Who will review near-miss reporting, and by when? The Operations Director said "either of us".', reply: 'The Operations Director, with the CFO. By March 2027.' }
+];
+// [text, outcome?, [questionIndex, anchorText]]
+const MINUTES = [
+	['1', 'Welcome, apologies and declarations of interest', [
+		['The Company Secretary confirmed that a quorum was present. Apologies were received from Tom Reilly.'],
+		['Priya Shah declared an interest in item 5: a relative by marriage was a director of AutoStack Systems, one of the two bidders for the Wakefield automation project. It was agreed that Priya Shah would leave the meeting for that item.']]],
+	['2', 'Minutes of the meeting held on 17 September 2026 and matters arising', [
+		['The minutes of the meeting held on 17 September 2026 were approved, subject to one correction: the pension review would return to the Board in November, not October.', true],
+		['There were no matters arising other than those on the action log or on the agenda.']]],
+	['3', "Chief Executive's report", [
+		['The Chief Executive reported that volumes for the quarter were 4 per cent higher than a year earlier, mainly because of the retail contracts. The Doncaster site had opened on time on 2 October 2026. Driver recruitment remained the principal pressure, with staffing at about 85 per cent of establishment, and agency spend for the half year was about £300,000 higher.'],
+		['The Chief Executive reported that Brightway had informally indicated that it would put its contract out to tender next year. The contract represented about 11 per cent of revenue.'],
+		['The Board noted the report.', true]]],
+	['4', 'Financial performance to 30 September 2026', [
+		['The Chief Financial Officer reported revenue for the six months of £38.4m against a budget of £40.1m, and EBITDA of £4.2m against £4.9m. The shortfall was mainly due to the late start at Doncaster and agency costs £310,000 over budget.'],
+		['Headroom on the facility was £9.6m. The bank had indicated that it was willing to extend the facility to March 2029; the extension had not been signed.'],
+		['Asked whether the full-year forecast remained credible, the Chief Financial Officer said that it was tight and estimated full-year revenue at £81.5m against a budget of £82.8m. A full reforecast would be presented in December.'],
+		['The Board noted the results and the revised outlook.', true]]],
+	['5', 'Wakefield warehouse automation', [
+		['Priya Shah left the meeting at 10.14 am, in accordance with the declaration under item 1. Mark Ellis, Operations Director, joined the meeting.'],
+		['The Operations Director presented paper B5, which sought approval of capital expenditure of £4.2m on automated storage at the Wakefield warehouse, with AutoStack Systems as preferred supplier. The site was at 94 per cent of capacity and the system would allow about 30 per cent more volume without a new building. The payback period presented was 3.1 years, based on 95 per cent uptime.'],
+		['The Senior Independent Director asked what the payback would be at 85 per cent uptime. Mark Ellis said that it would be closer to 4.5 years. The Senior Independent Director said that the paper presented the best case as the base case.'],
+		['The Chief Financial Officer said that the investment could be funded within the existing facility. The Chief Executive said that without it the company would be turning away volume by autumn 2027.'],
+		['The Board received legal advice from Harrow Lane Solicitors on the Wakefield lease. In the light of the advice, landlord consent would be required before any floor works.'],
+		['The Board approved capital expenditure on automated storage at Wakefield, subject to: total expenditure not exceeding £4.2m; phase one only proceeding initially; a break clause in the AutoStack contract after phase one; and landlord consent before any floor works.', true, [0, 'a break clause in the AutoStack contract']],
+		['The Board delegated to the Chief Executive and the Chief Financial Officer, acting together, authority to agree final contract terms within the £4.2m limit. Any proposal above that limit would return to the Board.', true],
+		['James Whitcombe asked that disagreement with the decision be recorded, on the ground that the payback case had not been tested properly.'],
+		['Mark Ellis was asked to present a revised business case at 85 per cent uptime, including the downside if only phase one proceeds.', false, [1, 'present a revised business case']],
+		['Priya Shah rejoined the meeting at 10.27 am.']]],
+	['6', 'Health and safety report', [
+		['Mark Ellis reported one reportable incident in the period: a forklift collision at Wakefield on 3 October 2026 in which an agency worker fractured a wrist. It had been reported to the HSE under RIDDOR within the deadline. Pedestrian walkway markings had worn; they had been repainted at all three sites and quarterly checks were being introduced.'],
+		['The Board asked whether near misses were being reported at Wakefield, as the numbers appeared low for a site of that size. Mark Ellis said that an answer would follow. The Board agreed that near-miss reporting needed to be examined.', false, [2, 'near-miss reporting needed to be examined']],
+		['The Board noted the report.', true]]],
+	['7', 'Any other business', [
+		['Consideration of the interim dividend was deferred to the December meeting, when the reforecast would be available.', true],
+		['The next meeting would be held on 10 December 2026. The meeting closed at 10.36 am.']]]
+];
+const ACTIONS = [
+	['Report on the Brightway retention plan and revenue exposure', 'Chief Executive', 'January 2027 meeting'],
+	['Present the full-year reforecast', 'Chief Financial Officer', 'December 2026 meeting'],
+	['Present a revised Wakefield business case at 85 per cent uptime', 'Operations Director', null],
+	['Review near-miss reporting across the sites and report back', null, null]
+];
+const FINDINGS = [
+	['material', 'omission, item 5', 'The first draft left out two conditions on the approval: phase one only, and the break clause.', 'Conditions restored in the decision sentence.'],
+	['material', 'unsupported statement, item 5', "The first draft said AutoStack was appointed. That was the paper's proposal; the meeting did not state it.", 'Removed. Question 1 asks the professional.'],
+	['minor', 'overstatement, item 4', '"The bank had agreed" overstated what the CFO reported.', 'Now "had indicated ...; the extension had not been signed".']
+];
+
+/* edits, grouped as the app's Edits step groups them */
+const ROUTES = [
+	['candidate_rule', 'Possible rule changes', 'The profile is silent here or says something different. These can become suggested changes for you to confirm.', [
+		['WS5', 'Wording or style', 3, 'Decisions rewritten as formal resolutions: "It was RESOLVED that ...". The profile accepts any verb that reflects the status.', ['2.1', '5.6', '5.7']],
+		['WS4', 'Wording or style', 4, 'Directors referred to by their initials after the attendance list (PS, JW). The profile uses full names.', ['1.2', '5.1', '5.8', '5.10']]]],
+	['draft_mistake', 'Draft mistakes', 'The profile already covered these, or the evidence was misread. The draft got them wrong; no rule needs changing.', [
+		['WS4', 'Wording or style', 4, '"Mark Ellis" replaced by "the Operations Director". The profile already prefers roles for executive reporting.', ['5.3', '5.9', '6.1', '6.2']],
+		['WS3', 'Wording or style', 1, 'RIDDOR spelled out on first use. The profile already asks for unfamiliar acronyms to be defined.', ['6.1']]]],
+	['meeting_only', 'This meeting only', 'Corrections that only apply to this meeting. Recorded, not carried forward.', [
+		['MP2', 'Factual correction', 1, 'Doncaster opened on 12 October, not 2 October. The transcript says "the second"; the correction is the professional\'s own knowledge.', ['3.1']],
+		['MP7', 'Content added', 3, 'Answers to the three questions: the AutoStack appointment, the business case date, and who reviews near-miss reporting.', ['5.6', '5.9', '6.3']]]]
+];
+
+/* suggested Board profile changes, learnt from the edits */
+const BOARD_PROPS = [
+	{ id: 'p1', dim: 'WS5', short: 'Decisions as formal resolutions', text: 'Write decisions of the Board as formal resolutions: "It was RESOLVED that ...". Items the Board only notes keep "The Board noted".', from: 'From 3 edits in the minutes of 12 November 2026', before: 'The Board approved capital expenditure on automated storage at Wakefield, subject to: ...', after: 'It was RESOLVED that capital expenditure on automated storage at Wakefield be approved, subject to: ...' },
+	{ id: 'p2', dim: 'WS4', short: 'Directors by initials', text: 'After the attendance list, refer to directors by their initials (for example, JW). Executives keep their role.', from: 'From 4 edits in the minutes of 12 November 2026', before: 'James Whitcombe asked that disagreement with the decision be recorded ...', after: 'JW asked that disagreement with the decision be recorded ...' }
+];
+
+/* ================= state ================= */
+const S = {
+	files: { agenda: false, transcript: false, notes: false, papers: false, edited: false },
+	moreFiles: false, created: false, busy: null,
+	ignored: new Set(), open: {}, filed: {}, attnOpen: false,
+	drafted: false, activeQ: null, compared: false,
+	bp: { p1: 'accept', p2: 'accept' }, v2: false,
+	arcFiles: false,
+	a: { decides: ['plan', 'charter'], naming: 'auditor', findings: 'full', resolved: 'yes', alt: true },
+	ap: {}, arcConfirmed: false
+};
+
+/* walkthrough order; prep makes each stop reachable directly */
+const GUIDE = [
+	{ r: 'new', label: 'New minutes (Step 1: Evidence)' },
+	{ r: 'mapping', label: 'Step 2: Mapping', prep: () => { S.created = true; S.drafted = false; S.compared = false; } },
+	{ r: 'minutes', label: 'Step 3: Minutes', prep: () => { S.created = S.drafted = true; } },
+	{ r: 'edits', label: 'Step 4: Upload the edited minutes', prep: () => { S.created = S.drafted = true; S.compared = false; } },
+	{ r: 'edits', label: 'Step 4: What the edits mean', prep: () => { S.created = S.drafted = S.files.edited = S.compared = true; } },
+	{ r: 'suggestions', label: 'Learning from edits: suggested changes', prep: () => { S.created = S.drafted = S.files.edited = S.compared = true; S.v2 = false; } },
+	{ r: 'board', label: 'Learning from edits: Board profile v2', prep: () => { S.created = S.drafted = S.files.edited = S.compared = S.v2 = true; } },
+	{ r: 'profiles', label: 'Minutes profiles' },
+	{ r: 'setup', label: 'Set up a committee: past minutes' },
+	{ r: 'questions', label: 'Set up a committee: a few questions', prep: () => { S.arcFiles = true; } },
+	{ r: 'review', label: 'Set up a committee: review', prep: () => { S.arcFiles = true; S.arcConfirmed = false; } },
+	{ r: 'arc', label: 'Committee profile v1', prep: () => { S.arcFiles = S.arcConfirmed = true; } }
+];
+const route = () => { const h = location.hash.replace('#', ''); return GUIDE.some((g) => g.r === h) ? h : 'new'; };
+function guideIndex() {
+	const r = route();
+	if (r === 'edits') return S.compared ? 4 : 3;
+	return GUIDE.findIndex((g) => g.r === r);
+}
+function go(r) { if (route() === r) render(); else location.hash = r; }
+function jump(i) { const g = GUIDE[i]; if (!g) return; if (g.prep) g.prep(); go(g.r); }
+function later(key, ms, fn) { S.busy = key; render(false); setTimeout(() => { S.busy = null; fn(); }, ms); }
+let toastTimer;
+function toast(msg) { const el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3400); }
+
+/* ================= shared pieces ================= */
+const chip = (t, c = '') => `<span class="chip ${c}">${t}</span>`;
+const dimChip = (c) => `<span class="chip"><span class="dim-chip">${c}</span> ${DIM[c]}</span>`;
+const kindChip = (c) => c.startsWith('MP') ? chip('Minuting Policy', 'policy') : chip('Writing Style', 'style');
+
+function fileDrop(key, label, name, size, { compact = false, desc = '' } = {}) {
+	return `<div class="${compact ? 'compact' : ''}">${S.files[key]
+		? `<div class="file"><span class="file-icon">${I('file', compact ? 16 : 18)}</span><span class="file-text"><span class="eyebrow">${label}</span><span class="name" title="${name}">${name}</span><span class="tiny muted">${size}</span></span><button type="button" class="btn ghost sm" data-act="unfile" data-k="${key}" aria-label="Remove ${label}">${I('x', 14)}</button></div>`
+		: `<button type="button" class="target" data-act="addfile" data-k="${key}"><span class="target-icon">${I('upload', compact ? 16 : 20)}</span><span class="target-text"><span class="target-label">${label}</span><span class="tiny muted">${desc || 'Drop a file here or'} <span class="browse">browse</span></span></span></button>`}</div>`;
+}
+
+function sidebar() {
+	const r = route();
+	const onMeeting = ['mapping', 'minutes', 'edits'].includes(r);
+	const meetings = [];
+	if (S.created) meetings.push({ title: 'Board of Directors, Kestrel Ridge Logistics', status: S.drafted ? 'completed' : 'awaiting_mapping_review', meta: S.drafted ? '12 November 2026' : 'Needs review', go: S.drafted ? 'minutes' : 'mapping', active: onMeeting });
+	meetings.push({ title: 'Audit and Risk Committee, Kestrel Ridge Logistics', status: 'completed', meta: '21 October 2026' });
+	meetings.push({ title: 'Board of Directors, Kestrel Ridge Logistics', status: 'completed', meta: '17 September 2026' });
+	const inProfiles = ['profiles', 'board', 'suggestions', 'setup', 'questions', 'review', 'arc'].includes(r);
+	return `<div class="sidebar">
+		<div class="row" style="justify-content:space-between"><a class="brand" data-go="new"><span class="logo">D</span><span>DESS Minutes</span></a><button class="btn ghost sm" style="color:var(--faint)" data-act="noop" aria-label="Collapse sidebar">${I('panelLeft', 16)}</button></div>
+		<a class="btn primary new" data-go="new">${I('plus')} New minutes</a>
+		<div class="section-head"><span class="eyebrow">Meetings</span><span class="count">${meetings.length}</span></div>
+		<nav class="list">${meetings.map((m) => `<a class="item ${m.active ? 'active' : ''}" ${m.go ? `data-go="${m.go}"` : 'data-act="old"'}><span class="title">${m.title}</span><span class="meta"><span class="dot ${m.status}"></span>${m.meta}</span></a>`).join('')}</nav>
+		<div class="foot"><a class="${inProfiles ? 'active' : ''}" data-go="profiles">${I('book')} Minutes profiles</a></div>
+	</div>`;
+}
+
+function protoStrip() {
+	const i = guideIndex();
+	return `<span class="badge">Prototype</span><span>Simulated meeting and output. No AI is running.</span><span class="spacer"></span>
+		<button class="btn ghost sm" data-act="prev" ${i <= 0 ? 'disabled' : ''} aria-label="Previous screen">${I('chevronLeft', 14)}</button>
+		<select data-act="jump" aria-label="Jump to a screen">${GUIDE.map((g, n) => `<option value="${n}" ${n === i ? 'selected' : ''}>${n + 1}. ${g.label}</option>`).join('')}</select>
+		<button class="btn ghost sm" data-act="next" ${i >= GUIDE.length - 1 ? 'disabled' : ''} aria-label="Next screen">${I('chevronRight', 14)}</button>`;
+}
+
+function meetingHeader() {
+	const stage = S.compared ? 4 : S.drafted ? 3 : 1;
+	const r = route();
+	const steps = [['Evidence', null], ['Mapping', 'mapping'], ['Minutes', S.drafted ? 'minutes' : null], ['Edits', S.drafted ? 'edits' : null]];
+	return `<header class="dhead">
+		<div class="title-row"><h1>Board of Directors, Kestrel Ridge Logistics</h1><p class="meta small">12 November 2026<span class="sep">&middot;</span><a data-go="board">board-of-directors v1</a></p><span class="spacer"></span><button class="btn sm" data-act="ai">${I('eye', 14)} View AI activity <span class="count">${S.drafted ? 5 : 1}</span></button></div>
+		<ol class="stepper">${steps.map(([label, href], i) => {
+			const here = href === r;
+			const cls = [i < stage ? 'done' : '', i === stage ? 'current' : '', here ? 'here' : ''].join(' ');
+			const dot = `<span class="sdot">${i < stage ? I('check', 10) : i + 1}</span>`;
+			return `<li class="${cls}">${href && !here ? `<a data-go="${href}">${dot}${label}</a>` : `<span class="step">${dot}${label}</span>`}</li>${i < steps.length - 1 ? '<li class="sepl"></li>' : ''}`;
+		}).join('')}</ol>
+	</header>`;
+}
+
+function working(title, message) {
+	return `<div class="working card" role="status"><span class="pulse-ic">${I('layers', 22)}</span><h2>${title}</h2><p class="muted">${message}</p></div>`;
+}
+
+/* ================= screens ================= */
+const VIEWS = {};
+
+VIEWS.new = () => {
+	const ready = S.files.agenda && S.files.transcript;
+	const profiles = [`Board of Directors (v${S.v2 ? 2 : 1})`, ...(S.arcConfirmed ? ['Audit and Risk Committee (v1)'] : []), 'DESS Standard Minutes Profile (v1)'];
+	return `<div class="page">
+		<header class="head"><h1>New minutes</h1><p class="muted">Add the agenda and transcript. You will check how the discussion maps to the agenda, then the first draft is written against the Board of Directors profile.</p></header>
+		<form class="card form" onsubmit="return false">
+			<div class="drops">${fileDrop('agenda', 'Agenda', 'KRL Board agenda 12 Nov 2026.docx', '38 KB')}${fileDrop('transcript', 'Transcript', 'Teams transcript 12 Nov 2026.vtt', '61 KB')}</div>
+			${S.moreFiles ? `<div class="extra">${fileDrop('notes', 'Meeting notes', 'Company Secretary notes.docx', '22 KB', { compact: true })}${fileDrop('papers', 'Supporting papers', 'B5 Wakefield automation v2.pdf', '410 KB', { compact: true })}</div>` : ''}
+			<div class="details">
+				<label class="field">Organisation<input type="text" value="Kestrel Ridge Logistics Limited"></label>
+				<label class="field">Board or committee<input type="text" value="Board of Directors"></label>
+				<label class="field">Meeting date<input type="text" value="12 November 2026"></label>
+				<label class="field wide">Minutes profile<select>${profiles.map((l) => `<option>${l}</option>`).join('')}</select></label>
+			</div>
+			${S.moreFiles ? '' : `<div class="adders"><button type="button" class="link-btn" data-act="more">${I('plus', 14)} Add meeting notes or papers</button></div>`}
+			<div class="actions"><span class="tiny muted">.docx, .txt, .md or .vtt</span>
+				<button type="button" class="btn primary lg" data-act="analyse" ${ready && !S.busy ? '' : 'disabled'}>${S.busy === 'analyse' ? '<span class="spinner"></span> Uploading' : `Analyse meeting ${I('arrowRight')}`}</button></div>
+		</form>
+	</div>`;
+};
+
+VIEWS.mapping = () => {
+	if (S.busy === 'draft') return `<div class="draft-page">${meetingHeader()}${working('Drafting the minutes', 'Selecting what belongs in the record, writing it up and checking it against the evidence.')}</div>`;
+	const editable = !S.drafted;
+	const visible = ATTENTION.filter((a) => !S.ignored.has(a.id));
+	const passages = AGENDA.reduce((n, a) => n + a[2].length, 0);
+	return `<div class="draft-page">${meetingHeader()}
+	<div class="layout">
+		<div class="lead"><p class="small">${editable ? 'Move anything in the wrong place; the minutes are written from this mapping.' : 'The minutes were written from this mapping, so it is now locked.'}</p>
+			<span class="counts">${visible.length ? `<button class="attn-pill" data-act="openAttn">${I('alert', 13)}<strong>${visible.length}</strong> need${visible.length === 1 ? 's' : ''} attention</button>` : ''}<span><strong>${passages}</strong> passages</span><span><strong>${AGENDA.length}</strong> agenda items</span></span></div>
+		<details class="group attention" id="attn" ${S.attnOpen ? 'open' : ''}>
+			<summary class="g-head"><span class="g-ref warn">${I('alert', 14)}</span><h3>Needs attention</h3><span class="tiny muted">Unsure, unmapped or flagged by the analysis</span><span class="spacer"></span>${I('chevronDown', 16)}</summary>
+			${visible.length ? `<ul class="passages">${visible.map((a) => `<li class="passage"><div class="p-main"><span class="ref">${a.ref}</span><div class="p-body"><p class="${a.uncovered ? 'small' : ''}">${a.uncovered ? a.text.replace(/\n/g, '<br>') : a.text}</p>${a.uncovered ? `<span class="tiny muted">${S.filed[a.id] ? 'Filed. It is saved when you draft the minutes.' : 'Not filed under any agenda item. File it under one if it belongs in the minutes.'}</span>` : ''}</div>${a.uncovered && editable && !S.filed[a.id] ? `<select class="file-under" data-act="fileUnder" data-k="${a.id}"><option value="">File under...</option>${AGENDA.map(([r, h]) => `<option value="${r}">${r}. ${h}</option>`).join('')}</select>` : ''}<button class="btn ghost sm" data-act="ignore" data-k="${a.id}">Ignore</button></div></li>`).join('')}</ul>`
+				: `<p class="all-good small" style="padding:0.75rem 1rem">${I('check', 14)} All remaining attention items have been ignored for this session.</p>`}
+		</details>
+		${AGENDA.map(([r, h, list]) => `<section class="group"><header class="g-head"><span class="g-ref">${r}</span><h3>${h}</h3><span class="spacer"></span><span class="tiny muted">${list.length} passage${list.length === 1 ? '' : 's'}</span></header>
+			<ul class="passages">${list.map(([a, b, summary, assoc]) => { const k = `${r}-${a}`; return `<li class="passage"><div class="p-main"><span class="ref">T${a}${b !== a ? '-' + b : ''}</span><div class="p-body"><p>${summary}</p><div class="p-meta">${assoc !== 'primary' ? `<span class="assoc ${assoc}">${ASSOC[assoc]}</span>` : ''}<button class="link-btn tiny" data-act="said" data-k="${k}">${S.open[k] ? 'Hide' : 'Show'} what was said</button></div></div>${editable ? `<button class="btn ghost sm" data-act="edit">${I('pencil', 14)} Edit</button>` : ''}</div>${S.open[k] ? `<pre class="excerpt">${said(a, b)}</pre>` : ''}</li>`; }).join('')}</ul></section>`).join('')}
+		<div class="actionbar">${editable ? `<span class="small muted">Happy with the mapping?</span><span class="spacer"></span><button class="btn primary lg" data-act="draft">Draft the minutes ${I('arrowRight')}</button>` : `<span class="spacer"></span><a class="btn primary" data-go="minutes">View the minutes ${I('arrowRight')}</a>`}</div>
+	</div></div>`;
+};
+
+function para(text, q) {
+	if (!q) return text;
+	const [n, anchor] = q;
+	const at = text.indexOf(anchor);
+	if (at < 0) return text;
+	return `${text.slice(0, at)}<button class="anchor ${S.activeQ === n ? 'active' : ''}" id="q-${n}" data-act="q" data-k="${n}">${anchor}<sup>${n + 1}</sup></button>${text.slice(at + anchor.length)}`;
+}
+VIEWS.minutes = () => `<div class="draft-page">${meetingHeader()}
+	<div class="mlayout">
+		<div class="paper">
+			<div class="doc-actions"><button class="btn sm" data-act="word">${I('download', 14)} Word</button><a class="btn sm" data-go="edits">${I('upload', 14)} ${S.compared ? 'Edits' : 'Upload edited'}</a><button class="btn sm" data-act="template" aria-label="More download options">${I('chevronDown', 14)}</button></div>
+			<article class="minutes">
+				<header class="m-head"><h1>Minutes of a meeting of the Board of Directors of Kestrel Ridge Logistics Limited</h1><p class="when">Thursday 12 November 2026 &middot; 10.00 am, Kestrel House, Leeds, and by video conference</p>
+					<dl><dt>Present</dt><dd>Margaret Okafor (Chair), Daniel Hughes (Chief Executive), Sarah Lindqvist (Chief Financial Officer), Priya Shah (Independent Non-Executive Director), James Whitcombe (Senior Independent Director)</dd>
+					<dt>In attendance</dt><dd>Helen Brady (Company Secretary, minute taker), Mark Ellis (Operations Director, items 5 and 6)</dd>
+					<dt>Apologies</dt><dd>Tom Reilly (Non-Executive Director)</dd></dl></header>
+				${MINUTES.map(([r, h, ps]) => `<section><h2><span class="num">${r}</span> ${h}</h2>${ps.map(([t, outcome, q]) => `<p class="${outcome ? 'outcome' : ''}">${para(t, q)}</p>`).join('')}</section>`).join('')}
+				<section><h2>Actions</h2><table><thead><tr><th>Action</th><th>Owner</th><th>Due</th></tr></thead><tbody>${ACTIONS.map(([a, o, d]) => `<tr><td>${a}</td><td class="${o ? '' : 'open'}">${o || 'Not agreed'}</td><td class="${d ? '' : 'open'}">${d || 'Not agreed'}</td></tr>`).join('')}</tbody></table></section>
+			</article>
+		</div>
+		<aside class="rail">
+			<section class="panel"><header class="panel-head">${I('message', 15)}<h3>Questions</h3><span class="count">Added to Word as comments</span></header>
+				<ol class="questions">${QS.map((q, i) => `<li><button class="q ${S.activeQ === i ? 'active' : ''}" data-act="qrail" data-k="${i}"><span class="q-num">${i + 1}</span><span class="q-body"><span class="tiny muted">${q.item}</span><span>${q.text}</span></span></button></li>`).join('')}</ol></section>
+			<details class="panel"><summary class="panel-head">${I('shield', 15)}<h3>How it was checked</h3><span class="count">${FINDINGS.length} findings</span>${I('chevronDown', 14)}</summary>
+				<div class="panel-body"><p class="small muted">An independent check against the evidence and the DESS Standard. Each finding was reconsidered before the draft was finished.</p>${FINDINGS.map(([sig, cat, issue, d]) => `<div class="finding"><div class="row tight"><span class="sig ${sig === 'material' ? 'material' : ''}">${sig}</span><span class="tiny muted">${cat}</span></div><p class="small">${issue}</p><p class="tiny decision"><strong>accepted:</strong> ${d}</p></div>`).join('')}</div></details>
+		</aside>
+	</div></div>`;
+
+VIEWS.edits = () => {
+	if (S.busy === 'compare') return `<div class="draft-page">${meetingHeader()}${working('Comparing with the draft', 'Matching each paragraph to the draft you downloaded, then explaining each edit against the Minutes Profile.')}</div>`;
+	if (!S.compared) return `<div class="draft-page">${meetingHeader()}
+		<section class="card stack intro"><div class="stack tight"><h2>Upload the edited minutes</h2><p class="small muted">Download the draft from the Minutes step, edit it in Word as you normally would (with Track Changes on or off) and upload the file here. You will see what changed and what it means.</p></div>
+			${fileDrop('edited', 'Edited minutes', 'KRL Board minutes 12 Nov 2026 HB.docx', '74 KB', { desc: 'Drop the .docx here or' })}
+			<div class="row"><button class="btn primary" data-act="compare" ${S.files.edited ? '' : 'disabled'}>${I('upload', 14)} Compare with the draft</button><a class="btn ghost" data-go="minutes">Back to the minutes</a></div></section></div>`;
+	return `<div class="draft-page">${meetingHeader()}
+		<section class="card stack"><div class="row"><div class="stack tight grow"><h2>16 edits to the draft</h2><p class="tiny muted">KRL Board minutes 12 Nov 2026 HB.docx, uploaded today. Compared with the draft downloaded on 13 Nov 2026.</p></div><button class="btn sm" data-act="noop">${I('upload', 14)} Upload a newer version</button></div>
+			<div class="row tight">${chip('14 changed', 'status-changed')}${chip('2 added', 'status-added')}${chip('3 questions answered')}</div></section>
+		<section class="card stack tight"><h3>What the edits mean</h3>
+			${ROUTES.map(([key, title, hint, patterns]) => `<div class="route"><div class="route-head"><div class="row"><span class="eyebrow route-${key}">${title}</span>${key === 'candidate_rule' ? `<span class="spacer"></span><button class="btn primary sm" data-go="suggestions">Review ${patterns.length} suggested changes ${I('arrowRight', 14)}</button>` : ''}</div><p class="tiny muted">${hint}</p></div>
+				<ul class="patterns">${patterns.map(([dim, kind, n, reason, refs]) => `<li><div class="row tight">${dimChip(dim)}<span class="small">${kind}</span>${n > 1 ? chip(n + ' times', 'times') : ''}</div><p class="small">${reason}</p><p class="tiny refs">${refs.map((x) => `<span class="muted">${x}</span>`).join('')}</p></li>`).join('')}</ul></div>`).join('')}
+		</section>
+		<section class="card stack tight"><h3>Comments in the edited file</h3>
+			${QS.map((q, i) => `<div class="thread"><p class="tiny muted">${I('message', 12)} Question ${i + 1}</p><p class="small">${q.text}</p><p class="small reply"><strong>Helen Brady:</strong> ${q.reply}</p></div>`).join('')}
+		</section></div>`;
+};
+
+function proposalCard(p, st, act) {
+	return `<div class="card proposal ${p.dim.startsWith('WS') ? 'style' : ''} ${st === 'reject' ? 'rejected' : ''}">
+		<div class="row tight">${dimChip(p.dim)}${kindChip(p.dim)}${p.badge ? chip(p.badge, 'from') : ''}</div>
+		<p class="text">${p.text}</p>
+		${p.before ? `<div class="example"><div class="ex"><span class="eyebrow">Now</span><p class="minute">${p.before}</p></div><div class="ex"><span class="eyebrow">With this change</span><p class="minute">${p.after}</p></div></div>` : ''}
+		<div class="row"><span class="tiny muted">${p.from}</span><span class="spacer"></span>
+			<button class="btn sm ${st === 'accept' ? 'on-ok' : ''}" data-act="${act}" data-k="${p.id}" data-v="accept">${I('check', 14)} Accept</button>
+			<button class="btn sm ${st === 'reject' ? 'on-err' : ''}" data-act="${act}" data-k="${p.id}" data-v="reject">${I('x', 14)} Reject</button></div>
+	</div>`;
+}
+VIEWS.suggestions = () => {
+	const n = Object.values(S.bp).filter((v) => v === 'accept').length;
+	return `<div class="stack contained">
+		<div><a class="small" data-go="profiles">Minutes profiles</a> <span class="muted small">/</span> <a class="small" data-go="board">Board of Directors</a><h1>Suggested changes</h1><p class="muted">Learnt from Helen Brady's edits to the minutes of 12 November 2026. Nothing changes until you confirm.</p></div>
+		${BOARD_PROPS.map((p) => proposalCard({ ...p, badge: 'Inferred' }, S.bp[p.id], 'bp')).join('')}
+		<div class="alert info small">The other 9 edits were draft mistakes the profile already covered, or corrections for this meeting only, so they do not change the profile. Hard floors can never be changed.</div>
+		<div class="actionbar"><span class="small muted">${n} of ${BOARD_PROPS.length} accepted</span><span class="spacer"></span><button class="btn primary lg" data-act="confirmV2" ${n ? '' : 'disabled'}>Confirm version 2 ${I('arrowRight')}</button></div>
+	</div>`;
+};
+
+function profilePage({ name, slug, based, versions, changes, message }) {
+	const changed = Object.fromEntries(changes.map((c) => [c.dim, true]));
+	const v = versions[0];
+	return `<div class="stack contained">
+		<div><a class="small" data-go="profiles">All profiles</a><h1>${name}</h1><p class="muted"><span class="mono">${slug}</span>, ${name}, based on ${based}</p></div>
+		${message ? `<p class="alert ok">${message}</p>` : ''}
+		<section class="card stack"><h2>Versions</h2><div class="table-wrap"><table><thead><tr><th>Version</th><th>Status</th><th>Change</th><th>Created</th></tr></thead><tbody>
+			${versions.map((x, i) => `<tr class="${i === 0 ? 'selected' : ''}"><td><a>v${x.n}</a>${i === 0 ? '<span class="active-tag">active</span>' : ''}</td><td>confirmed</td><td class="small">${x.change}</td><td class="small">${x.date}<div class="muted">${x.by}</div></td></tr>`).join('')}
+		</tbody></table></div></section>
+		<section class="card stack"><h2>${name} v${v.n} (confirmed)</h2>
+			${changes.length ? `<div><h3>Changes from the DESS Standard</h3><ul class="dims">${changes.map((c) => `<li class="changed"><span class="dim-chip">${c.dim}</span> ${DIM[c.dim]} <span class="tiny muted">${c.src}</span><div class="add">${c.text}</div></li>`).join('')}</ul></div>` : ''}
+			<div><h3>Hard floors</h3><p class="tiny muted">The same for every profile. They cannot be customised.</p><ul class="floors">${FLOORS.map((f) => `<li>${f}</li>`).join('')}</ul></div>
+			${[['Minuting Policy', MP], ['Writing Style', WS]].map(([t, list]) => `<div><h3>${t}</h3><ul class="dims">${list.map(([c, title]) => `<li class="${changed[c] ? 'changed' : ''}"><strong>${c}</strong> ${title} ${changed[c] ? '<span class="changed-tag">Changed</span>' : ''}</li>`).join('')}</ul></div>`).join('')}
+		</section>
+	</div>`;
+}
+VIEWS.board = () => {
+	const accepted = BOARD_PROPS.filter((p) => S.bp[p.id] === 'accept');
+	const versions = [{ n: 1, change: 'Created from DESS Standard Minutes Profile v1', date: '2 Nov 2026', by: 'Helen Brady' }];
+	if (S.v2) versions.unshift({ n: 2, change: `${accepted.map((p) => p.short).join('; ')}. From edits to the minutes of 12 Nov 2026.`, date: '19 Nov 2026', by: 'Helen Brady' });
+	return profilePage({ name: 'Board of Directors', slug: 'board-of-directors', based: 'dess-standard', versions, changes: S.v2 ? accepted.map((p) => ({ dim: p.dim, text: p.text, src: 'from edits' })) : [], message: S.v2 ? 'Version 2 confirmed. New minutes for this board use it.' : '' });
+};
+
+VIEWS.profiles = () => `<div class="stack contained">
+	<div class="row"><div class="stack tight grow"><h1>Minutes profiles</h1><p class="muted">A profile holds the Minuting Policy (MP1 to MP9) and Writing Style (WS1 to WS6) a draft follows. Drafts use the latest confirmed version.</p></div><a class="btn primary" data-go="setup">${I('plus')} Set up a board or committee</a></div>
+	<section class="card"><div class="table-wrap"><table><thead><tr><th>Profile</th><th>Body</th><th>Active</th><th>Latest</th></tr></thead><tbody>
+		<tr><td><a data-act="noop">DESS Standard Minutes Profile</a><div class="muted small mono">dess-standard</div></td><td>-</td><td>v1</td><td>v1</td></tr>
+		<tr><td><a data-go="board">Board of Directors</a><div class="muted small mono">board-of-directors</div></td><td>Board of Directors</td><td>v${S.v2 ? 2 : 1}</td><td>v${S.v2 ? 2 : 1}</td></tr>
+		${S.arcConfirmed ? `<tr><td><a data-go="arc">Audit and Risk Committee</a><div class="muted small mono">audit-and-risk-committee</div></td><td>Audit and Risk Committee</td><td>v1</td><td>v1</td></tr>` : ''}
+	</tbody></table></div></section></div>`;
+
+const PAST = ['ARC minutes 11 Feb 2026.docx', 'ARC minutes 13 May 2026.docx', 'ARC minutes 22 Jul 2026.docx', 'ARC minutes 16 Sep 2026.docx', 'ARC minutes 21 Oct 2026.docx'];
+VIEWS.setup = () => `<div class="page">
+	<header class="head"><div><a class="small" data-go="profiles">Minutes profiles</a></div><h1>Set up a board or committee</h1><p class="muted">It starts from the DESS Standard. Add some past approved minutes and DESS suggests how this committee already does things. You confirm every change.</p></header>
+	${S.busy === 'read' ? working('Reading the past minutes', 'Looking at how this committee records decisions, challenge, actions and audit findings.') : `
+	<div class="card form">
+		<div class="details"><label class="field">Board or committee<input type="text" value="Audit and Risk Committee"></label><label class="field">Organisation<input type="text" value="Kestrel Ridge Logistics Limited"></label><label class="field">Starts from<select><option>DESS Standard Minutes Profile (v1)</option></select></label></div>
+		<div>${S.arcFiles
+			? `<div class="file" style="min-height:0"><span class="file-icon">${I('file', 18)}</span><span class="file-text"><span class="eyebrow">Past approved minutes</span><span class="name">5 documents, February to October 2026</span></span><button class="btn ghost sm" data-act="arcfiles" aria-label="Remove">${I('x', 14)}</button></div><ul class="files">${PAST.map((f) => `<li>${I('file', 14)}<span class="name">${f}</span><span class="tiny muted">Approved</span></li>`).join('')}</ul>`
+			: `<button type="button" class="target" data-act="arcfiles"><span class="target-icon">${I('upload', 20)}</span><span class="target-text"><span class="target-label">Past approved minutes <span class="muted" style="font-weight:400">(optional)</span></span><span class="tiny muted">Three to ten documents. Drop them here or <span class="browse">browse</span></span></span></button>`}</div>
+		<div class="actions"><span class="tiny muted">Setting up a profile does not start a meeting.</span><button type="button" class="btn primary lg" data-act="readPast">Continue ${I('arrowRight')}</button></div>
+	</div>`}</div>`;
+
+function opt(key, value, label, sub = '', type = 'radio') {
+	const sel = type === 'radio' ? S.a[key] === value : S.a[key].includes(value);
+	return `<label class="opt ${sel ? 'sel' : ''}"><input type="${type}" name="${key}" data-act="${type === 'radio' ? 'ans' : 'ansc'}" data-k="${key}" data-v="${value}" ${sel ? 'checked' : ''}><span><b>${label}</b>${sub ? `<div class="small muted">${sub}</div>` : ''}</span></label>`;
+}
+const seen = (n) => chip(`In your past minutes: ${n}`, 'from');
+VIEWS.questions = () => `<div class="page">
+	<header class="head"><div><a class="small" data-go="profiles">Minutes profiles</a> <span class="muted small">/</span> <span class="small muted">Audit and Risk Committee</span></div><h1>A few questions</h1><p class="muted">Only where there is a real choice. Everything else stays as the DESS Standard.</p></header>
+	<div class="card qcard"><div class="row tight">${dimChip('MP4')}</div><h2>What does the committee decide itself?</h2><p class="small muted">Anything not ticked is recorded as a recommendation to the Board.</p>
+		<div class="opts">${opt('decides', 'plan', 'Internal audit plan', '', 'checkbox')}${opt('decides', 'charter', 'Internal audit charter', '', 'checkbox')}${opt('decides', 'auditor', 'Appointment of the external auditor', '', 'checkbox')}${opt('decides', 'accounts', 'Annual report and accounts', '', 'checkbox')}</div></div>
+	<div class="card qcard"><div class="row tight">${dimChip('WS4')}${seen('5 of 5')}</div><h2>Your past minutes name the member who asked each question. Is that a requirement or a habit?</h2>
+		<div class="example"><div class="ex"><span class="eyebrow">Named</span><p class="minute">Tom Reilly asked whether the auditor had tested revenue cut-off at the Doncaster site.</p></div><div class="ex"><span class="eyebrow">DESS Standard</span><p class="minute">The Committee asked whether the auditor had tested revenue cut-off at the Doncaster site.</p></div></div>
+		<div class="opts">${opt('naming', 'always', 'A requirement: always name who asked')}${opt('naming', 'auditor', 'Name members when they question the auditors; otherwise use the Standard')}${opt('naming', 'habit', 'A habit: use the DESS Standard', 'Names only for dissent, conflicts and continuing concerns')}</div></div>
+	<div class="card qcard"><div class="row tight">${dimChip('MP6')}${seen('5 of 5')}</div><h2>How fully should external audit findings be recorded?</h2>
+		<div class="opts">${opt('findings', 'full', 'Each finding with its rating, management response, owner and date', 'As in your past minutes')}${opt('findings', 'summary', 'A summary, with the findings report referenced', 'The DESS Standard default')}</div></div>
+	<div class="card qcard"><div class="row tight">${dimChip('WS5')}${seen('5 of 5')}</div><h2>Your past minutes write decisions as formal resolutions ("It was RESOLVED that ..."). Keep that?</h2>
+		<div class="opts">${opt('resolved', 'yes', 'Yes, keep formal resolutions')}${opt('resolved', 'no', 'No, use the DESS Standard', 'Any verb that matches the outcome: approved, agreed, noted')}</div></div>
+	<div class="card qcard"><h2>Anything else?</h2><textarea rows="2">Leave out concerns once management has agreed to look into them.</textarea>
+		<div class="reply-box"><b class="small">DESS:</b> That cannot be set up. A material unresolved concern cannot be left out or softened, and an agreement to look into it does not resolve it. Instead, the minutes could record the concern with management's response and the agreed date, and keep it in the actions until it is closed.</div>
+		<div class="opts"><label class="opt ${S.a.alt ? 'sel' : ''}"><input type="checkbox" data-act="alt" ${S.a.alt ? 'checked' : ''}><span><b>Use that instead</b></span></label></div></div>
+	<div class="row"><a class="btn ghost" data-go="review">Use the DESS Standard for the rest</a><span class="spacer"></span><a class="btn primary lg" data-go="review">Review the profile ${I('arrowRight')}</a></div>
+</div>`;
+
+function arcProps() {
+	const a = S.a, out = [];
+	const names = { plan: 'the internal audit plan', charter: 'the internal audit charter', auditor: 'the appointment of the external auditor', accounts: 'the annual report and accounts' };
+	const yes = a.decides.map((k) => names[k]), no = Object.keys(names).filter((k) => !a.decides.includes(k)).map((k) => names[k]);
+	out.push({ id: 'a1', dim: 'MP4', text: `The Committee decides ${yes.join(' and ') || 'nothing itself'}${no.length ? `. It recommends ${no.join(' and ')} to the Board` : ''}. Minutes say "approved" only for what it decides.`, from: 'From your answer' });
+	if (a.naming === 'always') out.push({ id: 'a2', dim: 'WS4', text: 'Name the member who asks each question.', from: 'From your answer and your past minutes (5 of 5)' });
+	if (a.naming === 'auditor') out.push({ id: 'a2', dim: 'WS4', text: 'Name members when they question the external or internal auditor. Other challenge is recorded collectively.', from: 'From your answer and your past minutes (5 of 5)' });
+	if (a.findings === 'full') out.push({ id: 'a3', dim: 'MP6', text: "Record each external audit finding with its rating, management's response, the owner and the agreed date.", from: 'From your answer and your past minutes (5 of 5)' });
+	if (a.resolved === 'yes') out.push({ id: 'a4', dim: 'WS5', text: 'Write decisions as formal resolutions: "It was RESOLVED that ...".', from: 'From your past minutes (5 of 5), confirmed in your answer' });
+	if (a.alt) out.push({ id: 'a5', dim: 'MP6', text: "Where management agrees to look into a concern, record the concern with management's response and the agreed date, and keep it in the actions until it is closed.", from: 'From your answer' });
+	for (const p of out) if (!(p.id in S.ap)) S.ap[p.id] = 'accept';
+	return out;
+}
+VIEWS.review = () => {
+	const list = arcProps();
+	const n = list.filter((p) => S.ap[p.id] === 'accept').length;
+	return `<div class="stack contained">
+		<div><a class="small" data-go="profiles">Minutes profiles</a> <span class="muted small">/</span> <span class="small muted">Audit and Risk Committee</span><h1>Review the profile</h1><p class="muted">The DESS Standard, with these changes for the Audit and Risk Committee. Nothing is used until you confirm.</p></div>
+		${list.map((p) => proposalCard(p, S.ap[p.id], 'ap')).join('')}
+		<div class="alert info small">None of the past minutes records a dissent. That does not mean dissent should be left out, so the DESS Standard applies.</div>
+		<div class="actionbar"><span class="small muted">${n} of ${list.length} accepted</span><span class="spacer"></span><button class="btn primary lg" data-act="confirmArc">Confirm version 1 ${I('arrowRight')}</button></div>
+	</div>`;
+};
+VIEWS.arc = () => {
+	const list = arcProps().filter((p) => S.ap[p.id] === 'accept');
+	return profilePage({ name: 'Audit and Risk Committee', slug: 'audit-and-risk-committee', based: 'dess-standard', versions: [{ n: 1, change: `${list.length} changes from the DESS Standard, from past minutes and set-up answers`, date: '19 Nov 2026', by: 'Helen Brady' }], changes: list.map((p) => ({ dim: p.dim, text: p.text, src: p.from.toLowerCase() })), message: "Version 1 confirmed. Choose it on New minutes for the committee's next meeting." });
+};
+
+/* ================= render and events ================= */
+function render(top = true) {
+	document.getElementById('side').innerHTML = sidebar();
+	document.getElementById('proto').innerHTML = protoStrip();
+	document.getElementById('view').innerHTML = VIEWS[route()]();
+	document.getElementById('menuBtn').innerHTML = I('menu', 18);
+	if (top) window.scrollTo(0, 0);
+	document.getElementById('side').classList.remove('open');
+	document.getElementById('scrim').classList.remove('open');
+}
+
+document.addEventListener('click', (e) => {
+	const g = e.target.closest('[data-go]');
+	if (g) { e.preventDefault(); go(g.dataset.go); return; }
+	const el = e.target.closest('[data-act]');
+	if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT' || el.disabled) return;
+	const { act, k, v } = el.dataset;
+	switch (act) {
+		case 'menu': document.getElementById('side').classList.add('open'); document.getElementById('scrim').classList.add('open'); break;
+		case 'closeMenu': document.getElementById('side').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); break;
+		case 'prev': jump(guideIndex() - 1); break;
+		case 'next': jump(guideIndex() + 1); break;
+		case 'addfile': S.files[k] = true; render(false); break;
+		case 'unfile': S.files[k] = false; render(false); break;
+		case 'more': S.moreFiles = true; render(false); break;
+		case 'analyse': later('analyse', 700, () => { S.created = true; S.drafted = false; go('mapping'); }); break;
+		case 'openAttn': S.attnOpen = true; render(false); document.getElementById('attn').scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
+		case 'ignore': S.ignored.add(k); S.attnOpen = true; render(false); break;
+		case 'said': S.open[k] = !S.open[k]; render(false); break;
+		case 'edit': toast('Edit moves a passage to another agenda item or changes its lines.'); break;
+		case 'draft': later('draft', 1400, () => { S.drafted = true; go('minutes'); }); break;
+		case 'q': case 'qrail': {
+			const n = Number(k);
+			S.activeQ = act === 'q' && S.activeQ === n ? null : n;
+			render(false);
+			if (act === 'qrail') document.getElementById('q-' + n)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			break;
+		}
+		case 'word': toast('Downloads the editable Word draft. The questions are Word comments.'); break;
+		case 'template': toast('Export into your own Word template.'); break;
+		case 'ai': toast('Shows each AI step and its prompt. Not part of this walkthrough.'); break;
+		case 'compare': later('compare', 1400, () => { S.compared = true; render(); }); break;
+		case 'bp': S.bp[k] = v; render(false); break;
+		case 'confirmV2': S.v2 = true; go('board'); break;
+		case 'arcfiles': S.arcFiles = !S.arcFiles; render(false); break;
+		case 'readPast': later('read', 1400, () => go('questions')); break;
+		case 'ap': S.ap[k] = v; render(false); break;
+		case 'confirmArc': S.arcConfirmed = true; go('arc'); break;
+		case 'old': toast('An earlier meeting. Not part of this walkthrough.'); break;
+		case 'noop': toast('Not part of this walkthrough.'); break;
+	}
+});
+document.addEventListener('change', (e) => {
+	const el = e.target.closest('[data-act]');
+	if (!el) return;
+	const { act, k, v } = el.dataset;
+	if (act === 'jump') jump(Number(el.value));
+	else if (act === 'fileUnder' && el.value) { S.filed[k] = true; S.attnOpen = true; render(false); }
+	else if (act === 'ans') { S.a[k] = v; render(false); }
+	else if (act === 'ansc') { S.a[k] = el.checked ? [...S.a[k], v] : S.a[k].filter((x) => x !== v); render(false); }
+	else if (act === 'alt') { S.a.alt = el.checked; render(false); }
+});
+document.addEventListener('toggle', (e) => { if (e.target.id === 'attn') S.attnOpen = e.target.open; }, true);
+window.addEventListener('hashchange', () => render());
+render();
+</script>
+</body>
+</html>
