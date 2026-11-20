@@ -10,7 +10,7 @@ from app.db import create_tables, enable_sqlite_foreign_keys
 from app.minutes.profile_content import ProfileContent, load_profile_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
-PROFILE_FIXTURE = FIXTURES / "minutes" / "profile.yaml"
+PROFILE_FIXTURE = FIXTURES / "minutes" / "profile.md"
 
 
 @pytest.fixture

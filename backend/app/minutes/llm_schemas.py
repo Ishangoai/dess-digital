@@ -302,6 +302,26 @@ class DraftMinutes(BaseModel):
     drafting_notes: list[str] = Field(description="Notes for the reviewer; never exported.")
 
 
+# Stages 2, 3 and 5 run once per agenda item; code assembles the outputs above.
+
+
+class ItemSelectionResult(BaseModel):
+    selection: ItemSelection
+    clarifications: list[ClarificationRequirement]
+
+
+class ItemDraft(BaseModel):
+    item: MinuteItem
+    actions: list[ActionEntry]
+    questions: list[ClarificationQuestion]
+    drafting_notes: list[str] = Field(description="Notes for the reviewer; never exported.")
+
+
+class MeetingHeaderDraft(BaseModel):
+    header: MeetingHeader
+    questions: list[ClarificationQuestion] = Field(description="meeting_heading questions only.")
+
+
 # Stage 4: validate once, then reconsider once
 
 
@@ -358,3 +378,13 @@ class FindingDecision(BaseModel):
 class Reconsideration(BaseModel):
     decisions: list[FindingDecision]
     revised_minutes: DraftMinutes
+
+
+class ItemReconsideration(BaseModel):
+    decisions: list[FindingDecision]
+    revised: ItemDraft
+
+
+class HeaderReconsideration(BaseModel):
+    decisions: list[FindingDecision]
+    revised: MeetingHeaderDraft

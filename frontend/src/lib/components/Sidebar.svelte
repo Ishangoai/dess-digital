@@ -99,6 +99,9 @@
 			<a href="/profiles" class:active={page.url.pathname.startsWith('/profiles')} title="Minutes profiles">
 				<Icon name="book" />
 			</a>
+			<a href="/scores" class:active={page.url.pathname.startsWith('/scores')} title="Draft scores">
+				<Icon name="check" />
+			</a>
 		</div>
 	{:else}
 
@@ -147,6 +150,10 @@
 		<a href="/profiles" class:active={page.url.pathname.startsWith('/profiles')}>
 			<Icon name="book" />
 			Minutes profiles
+		</a>
+		<a href="/scores" class:active={page.url.pathname.startsWith('/scores')}>
+			<Icon name="check" />
+			Draft scores
 		</a>
 	</div>
 	{/if}

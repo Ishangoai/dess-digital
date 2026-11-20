@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto, invalidate } from '$app/navigation';
-	import { parse } from 'yaml';
-	import { api, errorText, formatDate, type VersionStatus } from '#lib/api.ts';
+	import { api, errorText, formatDate, type ProfileContent, type VersionStatus } from '#lib/api.ts';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -47,7 +46,16 @@
 		busy = true;
 		error = message = '';
 		try {
-			const content = parse(await file[0].text()); // JSON is valid YAML
+			const text = await file[0].text();
+			// A .md file replaces the logic and keeps the current name and Word settings.
+			const content: ProfileContent = file[0].name.endsWith('.json')
+				? JSON.parse(text)
+				: {
+						name: version?.content.name ?? profile.name,
+						description: version?.content.description ?? null,
+						logic: text,
+						presentation: version?.content.presentation
+					};
 			const v = await api.createVersion(profile.slug, content, summary);
 			message = `Created version ${v.version_number} (proposed). Review and confirm it to make it active.`;
 			summary = '';
@@ -111,8 +119,8 @@
 			<summary>Upload a new version</summary>
 			<form class="stack upload" onsubmit={upload}>
 				<label class="field">
-					Profile file (.yaml or .json)
-					<input type="file" accept=".yaml,.yml,.json" bind:files={file} />
+					Profile file (.md, or .json with every field)
+					<input type="file" accept=".md,.json" bind:files={file} />
 				</label>
 				<label class="field">
 					Change summary
@@ -128,21 +136,10 @@
 		<section class="card stack">
 			<h2>{c.name} v{version.version_number} ({version.status})</h2>
 			{#if c.description}<p>{c.description}</p>{/if}
-			<div>
-				<h3>Hard floors</h3>
-				<ul>{#each c.hard_floors as floor, i (i)}<li>{floor}</li>{/each}</ul>
-			</div>
-			{#each [['Minuting Policy', c.minuting_policy], ['Writing Style', c.writing_style]] as const as [title, dims] (title)}
-				<div>
-					<h3>{title}</h3>
-					{#each dims as d (d.code)}
-						<details>
-							<summary><strong>{d.code}</strong> {d.title}</summary>
-							<p class="standard">{d.default_standard}</p>
-						</details>
-					{/each}
-				</div>
-			{/each}
+			<p class="small muted">
+				The minuting logic sent to the model on every call ({c.logic.split(/\s+/).length.toLocaleString()} words).
+			</p>
+			<pre class="logic">{c.logic}</pre>
 		</section>
 	{/if}
 </div>
@@ -179,16 +176,19 @@
 		cursor: pointer;
 	}
 
-	.standard {
+	.logic {
+		margin: 0;
+		max-height: 70vh;
+		overflow: auto;
 		white-space: pre-wrap;
-		font-size: 0.9rem;
-		margin: 0.4rem 0 0.75rem 1rem;
+		font-family: inherit;
+		font-size: 0.85rem;
+		line-height: 1.5;
 		color: var(--text-2);
-	}
-
-	ul {
-		margin: 0.25rem 0 0;
-		padding-left: 1.1rem;
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		padding: 0.9rem 1rem;
 	}
 
 	.btn.small {

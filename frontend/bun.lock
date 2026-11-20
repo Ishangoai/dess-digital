@@ -4,9 +4,6 @@
   "workspaces": {
     "": {
       "name": "frontend",
-      "dependencies": {
-        "yaml": "2.8.1",
-      },
       "devDependencies": {
         "@playwright/test": "^1.65.0",
         "@sveltejs/adapter-static": "^4.0.1",

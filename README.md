@@ -39,10 +39,16 @@ cd backend && uv run alembic upgrade head
 
 Docker Compose runs migrations automatically (the `migrate` service). After changing a model, add a migration with `uv run alembic revision --autogenerate -m "..."` and review it.
 
-Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are loaded from a local file. The DESS Standard text is client material, so it lives in the gitignored `reference/` folder and is never committed:
+Minutes profiles (`/api/profiles`, enable with `MINUTES_ROUTES=true`) are markdown. The DESS Standard profile is `backend/app/minutes/profiles/dess_standard.md`: the Professional Standards and Operational AI Logic documents, word for word, sent to the model on every call. The compose `migrate` service seeds it on every deploy (a new version only when the file changed). Locally:
 
 ```bash
-cd backend && uv run python -m app.seed_profile ../reference/profiles/dess_standard.yaml --confirm
+cd backend && uv run python -m app.seed_profile --confirm
+```
+
+To rebuild it from new versions of the DESS Word documents:
+
+```bash
+uv run python -m app.minutes.build_logic STANDARDS.docx OPS_LOGIC.docx
 ```
 
 ### Drafting minutes
@@ -55,13 +61,25 @@ uv run uvicorn app.main:app --reload                  # API on :8000
 uv run --group ui python -m dev_ui                    # Gradio dev UI on :7860
 ```
 
-The flow is: upload agenda + transcript and/or notes, review the mapping of evidence to agenda items, generate, then download the Word draft (clarification questions are Word comments).
+The flow is: upload agenda + transcript and/or notes, review the mapping of evidence to agenda items, generate, then download the Word draft (clarification questions are Word comments). Selecting content, writing and reconsidering run once per agenda item, in parallel (`MINUTES_PARALLEL_CALLS`, default 4), which keeps cheaper models from writing thin summaries.
+
+### Review and learning
+
+On the minutes page a reviewer can approve the draft, request a revision (with a reason), or edit the Word file and upload it back. Every download is stored exactly (`exported_documents`); its paragraphs carry hidden bookmark ids, so an uploaded copy is lined up with the download it came from paragraph by paragraph (unchanged, changed, removed, added or moved), with tracked changes, comments and replies to the clarification questions kept. The **Edits** page shows it side by side with word-level differences (DESS-050).
+
+**Classify edits** then labels each edit by kind, dimension (MP1 to WS6) and cause, in code for cheap cases (formatting, dates, capitals, a name replaced by a role) and with one model call per agenda item for the rest, and groups repeated edits into one finding with a count (DESS-051). The cause decides where an edit goes: misread evidence and "profile not applied" are the draft's defects (test cases, no profile change); "the profile is silent or says otherwise" is a candidate for an amendment proposal; one-off choices stay with the meeting. Nothing changes the profile from here.
+
+Every piece of feedback also earns a reward from 0 to 1 (approve 1, revise 0, edited copy = share of the draft kept); **Draft scores** ranks each profile version and model by it. An organisation profile (Minutes profiles page) keeps one organisation's feedback to itself: its reviewers' final copies are shown to later drafts as house examples. To check a new profile version against past finals before confirming it:
+
+```bash
+uv run python -m evals.replay --profile <org-slug> --version <n> --limit 3 --out ../reference/replay
+```
 
 Without the API or database:
 
 ```bash
-uv run python -m app.minutes.cli --profile ../reference/profiles/dess_standard.yaml \
-  --agenda agenda.docx --transcript transcript.txt --out ../reference/out
+uv run python -m app.minutes.cli --agenda agenda.docx --transcript transcript.txt \
+  --out ../reference/out
 ```
 
 ### Evaluating judgement
@@ -70,7 +88,16 @@ Runs cases through the real model (costs tokens) and checks the minutes apply ju
 
 ```bash
 uv run python -m evals.minutes_eval evals/cases/*.yaml ../reference/evals/cases/*.yaml \
-  --profile ../reference/profiles/dess_standard.yaml --out ../reference/evals/out --repeat 2
+  --out ../reference/evals/out --repeat 2
+```
+
+### Comparing minutes
+
+An LLM judge scores minutes of one meeting item by item against the profile (outcome, substance, challenge, actions, accuracy, style) and, with `--reference`, compares each with a gold copy in both orders. Minutes can be `.docx`, `.md` or a pipeline `draft.json`. Use a strong judge model.
+
+```bash
+uv run python -m evals.compare --agenda agenda.docx --transcript transcript.docx \
+  --reference gold.docx --judge-model gemini-3.6-flash --out ../reference/compare out/*/draft.json
 ```
 
 ## Checks
@@ -87,7 +114,7 @@ Push to `development`: `.github/workflows/deploy.yml` builds both images, pushes
 GitHub `development` environment needs:
 
 - secrets: `GCP_PROJECT_NAME`, `GCP_PROJECT_NUMBER`, `POSTGRES_PASSWORD`, `LLM_API_KEY` (not needed for `vertex` / `anthropic_vertex`)
-- vars: `LLM_PROVIDER` (`openai` | `azure` | `gemini` | `vertex` | `anthropic` | `anthropic_vertex`), `LLM_MODEL`, `GCP_LOCATION` (optional, default `global`), `AZURE_ENDPOINT` (azure only), `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
+- vars: `LLM_PROVIDER` (`openai` | `azure` | `gemini` | `vertex` | `anthropic` | `anthropic_vertex`), `LLM_MODEL`, `GCP_LOCATION` (optional, default `global`), `AZURE_ENDPOINT` (azure only), `MINUTES_PARALLEL_CALLS` (optional, default 4; per-item calls run at once, raise it for slow models), `SITE_ADDRESS` (domain pointing at the VM; empty means plain HTTP)
 
 LLM calls go through `backend/app/llm`. The team default is `LLM_PROVIDER=gemini` with an AI Studio key.
 

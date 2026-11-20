@@ -7,12 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.minutes.profile_content import (
-    PROFILE_SCHEMA_VERSION,
-    ProfileContent,
-    ProvisionKind,
-    content_hash,
-)
+from app.minutes.profile_content import PROFILE_SCHEMA_VERSION, ProfileContent, content_hash
 from app.models.profile import (
     MinutesProfile,
     MinutesProfileVersion,
@@ -51,12 +46,6 @@ class InvalidTransitionError(ProfileError):
     pass
 
 
-class FloorViolationError(ProfileError):
-    def __init__(self, violations: list[str]) -> None:
-        super().__init__("; ".join(violations))
-        self.violations = violations
-
-
 # profiles
 
 
@@ -84,6 +73,17 @@ def create_profile(
         db.rollback()
         raise DuplicateProfileError(f"profile '{slug}' already exists") from e
     db.refresh(profile)
+    base = active_version(based_on) if based_on else None
+    if based_on and base:
+        # An organisation profile starts as a confirmed copy of its base, ready to draft with.
+        content = version_content(base).model_copy(
+            update={"name": name, "description": description}
+        )
+        summary = f"Copied from {based_on.slug} v{base.version_number}"
+        version = create_version(
+            db, profile, content, origin=VersionOrigin.CUSTOMISATION, change_summary=summary
+        )
+        confirm(db, version, by="copy")
     return profile
 
 
@@ -121,21 +121,6 @@ def version_content(version: MinutesProfileVersion) -> ProfileContent:
     return ProfileContent.model_validate(version.content)
 
 
-def check_floors(parent: ProfileContent, child: ProfileContent) -> list[str]:
-    """List the hard floors or evidential fundamentals the child changed."""
-    violations: list[str] = []
-    if child.hard_floors != parent.hard_floors:
-        violations.append("hard_floors differ from the parent version")
-    parent_fixed = parent.provisions_of_kind(ProvisionKind.EVIDENTIAL_FUNDAMENTAL)
-    child_fixed = child.provisions_of_kind(ProvisionKind.EVIDENTIAL_FUNDAMENTAL)
-    for pid, provision in parent_fixed.items():
-        if pid not in child_fixed:
-            violations.append(f"evidential fundamental '{pid}' was removed")
-        elif child_fixed[pid] != provision:
-            violations.append(f"evidential fundamental '{pid}' was changed")
-    return violations
-
-
 def create_version(
     db: Session,
     profile: MinutesProfile,
@@ -151,11 +136,6 @@ def create_version(
         parent = get_version(profile, parent_number)
     else:
         parent = active_version(profile) or latest_version(profile)
-
-    if parent is not None and origin != VersionOrigin.SEED:
-        violations = check_floors(version_content(parent), content)
-        if violations:
-            raise FloorViolationError(violations)
 
     current_max = db.scalar(
         select(func.max(MinutesProfileVersion.version_number)).where(

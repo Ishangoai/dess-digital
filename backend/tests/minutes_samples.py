@@ -1,5 +1,9 @@
 """Stage outputs for the invented Northbridge meeting in fixtures/minutes."""
 
+import re
+
+from app.llm.types import CompletionRequest
+from app.minutes.edit_labels import EditLabels
 from app.minutes.llm_schemas import (
     AgendaItem,
     AnchorKind,
@@ -13,11 +17,16 @@ from app.minutes.llm_schemas import (
     Finding,
     FindingCategory,
     FindingDecision,
+    HeaderReconsideration,
     InputProblem,
     InputProblemKind,
+    ItemDraft,
+    ItemReconsideration,
     ItemSelection,
+    ItemSelectionResult,
     LineRef,
     MeetingHeader,
+    MeetingHeaderDraft,
     MinuteItem,
     MinuteParagraph,
     OutcomeType,
@@ -104,19 +113,22 @@ def analysis(problems: bool = False) -> EvidenceAnalysis:
     )
 
 
+def empty_selection(r: str, heading: str) -> ItemSelection:
+    return ItemSelection(
+        item_ref=r,
+        heading=heading,
+        treatment=Treatment.BRIEF,
+        outcomes=[],
+        points=[],
+        actions=[],
+        delegations=[],
+        drafting_boundary=[],
+        omitted_summary=None,
+    )
+
+
 def selection() -> PolicySelection:
-    def brief(r: str, heading: str) -> ItemSelection:
-        return ItemSelection(
-            item_ref=r,
-            heading=heading,
-            treatment=Treatment.BRIEF,
-            outcomes=[],
-            points=[],
-            actions=[],
-            delegations=[],
-            drafting_boundary=[],
-            omitted_summary=None,
-        )
+    brief = empty_selection
 
     minutes = brief("2", "Minutes of the previous meeting")
     minutes.outcomes = [
@@ -248,18 +260,60 @@ def validation(findings: bool = True) -> ValidationReport:
 def reconsideration() -> Reconsideration:
     return Reconsideration(
         decisions=[FindingDecision(finding_id="F1", decision=Disposition.ACCEPT, reason="Agreed.")],
-        revised_minutes=draft(
-            "The Board approved phase one only, capped at £1.2 million, "
-            "and authorised the Finance Director to sign the contract."
-        ),
+        revised_minutes=draft(REVISED_ROOF),
     )
+
+
+REVISED_ROOF = (
+    "The Board approved phase one only, capped at £1.2 million, "
+    "and authorised the Finance Director to sign the contract."
+)
+
+
+def item_ref(request: CompletionRequest) -> str:
+    """Which item a per-item call is about, from its <this_item> block."""
+    content = request.messages[0].content
+    assert isinstance(content, str)
+    match = re.search(r"<this_item>\n(?:Item|Additional business) ([^:]+):", content)
+    assert match, "not a per-item call"
+    return match.group(1)
+
+
+def item_selection(ref: str) -> ItemSelectionResult:
+    s = selection()
+    return ItemSelectionResult(
+        selection=next(i for i in s.items if i.item_ref == ref),
+        clarifications=[c for c in s.clarifications if c.item_ref == ref],
+    )
+
+
+def item_draft(ref: str, roof_text: str | None = None) -> ItemDraft:
+    d = draft(roof_text) if roof_text else draft()
+    return ItemDraft(
+        item=next(i for i in d.items if i.item_ref == ref),
+        actions=[],
+        questions=[q for q in d.questions if q.item_ref == ref],
+        drafting_notes=[],
+    )
+
+
+def header_draft() -> MeetingHeaderDraft:
+    return MeetingHeaderDraft(header=draft().header, questions=[])
+
+
+def item_reconsideration(ref: str) -> ItemReconsideration:
+    decisions = reconsideration().decisions if ref == "4" else []
+    return ItemReconsideration(decisions=decisions, revised=item_draft(ref, REVISED_ROOF))
 
 
 def all_stage_outputs(findings: bool = True) -> dict:
     return {
         "EvidenceAnalysis": analysis(),
-        "PolicySelection": selection(),
-        "DraftMinutes": draft(),
+        "ItemSelectionResult": lambda r: item_selection(item_ref(r)),
+        "MeetingHeaderDraft": header_draft(),
+        "ItemDraft": lambda r: item_draft(item_ref(r)),
         "ValidationReport": validation(findings),
-        "Reconsideration": reconsideration(),
+        "ItemReconsideration": lambda r: item_reconsideration(item_ref(r)),
+        "HeaderReconsideration": HeaderReconsideration(decisions=[], revised=header_draft()),
+        "EditLabels": EditLabels(labels=[]),
     }

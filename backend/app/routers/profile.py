@@ -90,10 +90,6 @@ def create_version(slug: str, body: ProfileVersionCreate, db: DB) -> ProfileVers
         )
     except svc.VersionNotFoundError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e)) from e
-    except svc.FloorViolationError as e:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, {"floor_violations": e.violations}
-        ) from e
     return ProfileVersionOut.of(version)
 
 

@@ -1,8 +1,9 @@
 """Run eval cases through the real pipeline and check the judgement it applies.
 
 Usage:
-    uv run python -m evals.minutes_eval evals/cases/*.yaml \
-        --profile ../reference/profiles/dess_standard.yaml --out ../reference/evals/out
+    uv run python -m evals.minutes_eval evals/cases/*.yaml --out ../reference/evals/out
+
+--profile defaults to the bundled DESS Standard profile.
 """
 
 import argparse
@@ -18,7 +19,7 @@ from app.minutes.docx_export import render_minutes_docx
 from app.minutes.evidence import EvidenceBundle, MeetingInfo, SourceRole, SourceText
 from app.minutes.extract import extract_text
 from app.minutes.pipeline import Pipeline, StageError
-from app.minutes.profile_content import ProfileContent, load_profile_file
+from app.minutes.profile_content import DEFAULT_PROFILE_PATH, ProfileContent, load_profile_file
 from app.minutes.prompts import PromptContext
 from evals.checks import Assertion, check
 
@@ -85,7 +86,7 @@ def run_case(case: Case, profile: ProfileContent, out: Path, attempt: int) -> li
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate minuting judgement on test cases")
     parser.add_argument("cases", nargs="+", type=Path)
-    parser.add_argument("--profile", type=Path, required=True)
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE_PATH, help=".md or .json")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--repeat", type=int, default=1, help="runs per case (outputs vary)")
     args = parser.parse_args(argv)

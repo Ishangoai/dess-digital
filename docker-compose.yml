@@ -42,7 +42,8 @@ services:
 
   migrate:
     <<: *backend
-    command: ["alembic", "upgrade", "head"]
+    # Migrate, then load the bundled DESS profile (a new version only if the .md changed).
+    command: ["sh", "-c", "alembic upgrade head && python -m app.seed_profile --confirm"]
     restart: "no"
 
   api:

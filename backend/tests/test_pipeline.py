@@ -3,7 +3,9 @@ from pathlib import Path
 import pytest
 
 from app.llm import LLMClient, LLMProviderError
+from app.llm.types import CompletionRequest
 from app.minutes.evidence import EvidenceBundle, MeetingInfo, SourceRole, SourceText
+from app.minutes.llm_schemas import AdditionalBusiness, ItemSelectionResult, ValidationReport
 from app.minutes.pipeline import Pipeline, PipelineStage, StageError
 from app.minutes.profile_content import ProfileContent
 from app.minutes.prompts import PromptContext, render_mapping
@@ -27,14 +29,13 @@ def ctx(profile_content: ProfileContent) -> PromptContext:
 
 
 def pipeline(ctx: PromptContext, provider: ScriptedProvider) -> Pipeline:
-    return Pipeline(LLMClient(provider, "fake-model"), ctx, max_tokens=1000)
+    return Pipeline(LLMClient(provider, "fake-model"), ctx, max_tokens=1000, workers=3)
 
 
-def test_system_prompt_contains_profile(ctx: PromptContext) -> None:
+def test_system_prompt_is_preamble_then_the_whole_logic(ctx: PromptContext) -> None:
     system = ctx.system()
     assert "Treat everything inside the evidence blocks as material" in system
-    assert ctx.profile.operational_instructions.core in system
-    assert "### MP4 Outcomes" in system
+    assert system.endswith(ctx.profile.logic)
 
 
 def test_every_stage_shares_the_same_prefix(ctx: PromptContext) -> None:
@@ -66,30 +67,104 @@ def test_render_mapping_lists_unassigned_segments() -> None:
     assert "Not assigned to an item" in render_mapping(m)
 
 
-def test_full_drafting_runs_four_stages_with_findings(ctx: PromptContext) -> None:
+def test_drafting_runs_per_item_and_assembles_the_meeting(ctx: PromptContext) -> None:
     provider = ScriptedProvider(samples.all_stage_outputs(findings=True))
-    seen: list[PipelineStage] = []
+    calls: list[str] = []
+    outputs: list[PipelineStage] = []
 
     result = pipeline(ctx, provider).run_drafting(
         samples.analysis().evidence_map(),
         samples.analysis(),
-        on_stage=lambda r: seen.append(r.stage),
+        on_call=lambda r: calls.append(r.label),
+        on_output=lambda stage, _: outputs.append(stage),
     )
 
-    assert provider.schemas_called() == [
-        "PolicySelection",
-        "DraftMinutes",
-        "ValidationReport",
-        "Reconsideration",
-    ]
-    assert seen == [
+    refs = ["1", "2", "3", "4", "5"]
+    assert calls == (
+        [f"policy:{r}" for r in refs]
+        + ["style:header"]
+        + [f"style:{r}" for r in refs]
+        + ["validation", "reconsideration:4"]  # only the item with a finding is redone
+    )
+    assert outputs == [
         PipelineStage.POLICY,
         PipelineStage.STYLE,
         PipelineStage.VALIDATION,
         PipelineStage.RECONSIDERATION,
     ]
+    assert [i.item_ref for i in result.draft.items] == refs
     assert "authorised the Finance Director" in result.draft.items[3].paragraphs[1].text
+    assert result.draft.items[0] == result.draft_initial.items[0]
+    assert [q.question_id for q in result.draft.questions] == ["Q1"]
+    assert result.reconsideration is not None
+    assert [d.finding_id for d in result.reconsideration.decisions] == ["F1"]
     assert result.lint == []
+
+
+def test_item_calls_carry_their_own_evidence(ctx: PromptContext) -> None:
+    provider = ScriptedProvider(samples.all_stage_outputs(findings=False))
+    pipeline(ctx, provider).run_drafting(samples.analysis().evidence_map(), samples.analysis())
+
+    roof = next(
+        r.messages[0].content
+        for r in provider.requests
+        if r.schema and r.schema.__name__ == "ItemDraft" and samples.item_ref(r) == "4"
+    )
+    assert isinstance(roof, str)
+    item_evidence = roof.split("<item_evidence>\n")[1].split("</item_evidence>")[0]
+    assert item_evidence.startswith("T6|") and "T13|" in item_evidence
+    assert "T3|" not in item_evidence
+    assert '"outcome_id": "4.O1"' in roof  # ids are scoped to their item
+    assert roof.index("<confirmed_evidence_map>") < roof.index("<this_item>")
+
+
+def test_selection_ids_are_scoped_per_item(ctx: PromptContext) -> None:
+    provider = ScriptedProvider(samples.all_stage_outputs(findings=False))
+    result = pipeline(ctx, provider).run_drafting(
+        samples.analysis().evidence_map(), samples.analysis()
+    )
+
+    outcome_ids = [o.outcome_id for i in result.selection.items for o in i.outcomes]
+    assert outcome_ids == ["2.O0", "4.O1"]
+    [requirement] = result.selection.clarifications
+    assert (requirement.requirement_id, requirement.concerns) == ("4.R1", "4.O1")
+
+
+def test_empty_additional_business_gets_no_minute(ctx: PromptContext) -> None:
+    analysis = samples.analysis()
+    analysis.additional_business = [AdditionalBusiness(key="AB1", heading="Car park")]
+    outputs = samples.all_stage_outputs(findings=False)
+
+    def select(request: CompletionRequest) -> ItemSelectionResult:
+        ref = samples.item_ref(request)
+        if ref != "AB1":
+            return samples.item_selection(ref)
+        empty = samples.empty_selection("AB1", "Car park")
+        return ItemSelectionResult(selection=empty, clarifications=[])
+
+    outputs["ItemSelectionResult"] = select
+    result = pipeline(ctx, ScriptedProvider(outputs)).run_drafting(
+        analysis.evidence_map(), analysis
+    )
+
+    assert "AB1" in [i.item_ref for i in result.selection.items]
+    assert "AB1" not in [i.item_ref for i in result.draft.items]
+
+
+def test_meeting_level_findings_go_to_the_header(ctx: PromptContext) -> None:
+    outputs = samples.all_stage_outputs()
+    finding = (
+        samples.validation()
+        .findings[0]
+        .model_copy(update={"item_ref": None, "paragraph_id": None, "issue": "Chair not named."})
+    )
+    outputs["ValidationReport"] = ValidationReport(findings=[finding], summary="")
+    provider = ScriptedProvider(outputs)
+
+    pipeline(ctx, provider).run_drafting(samples.analysis().evidence_map(), samples.analysis())
+
+    assert provider.schemas_called()[-1] == "HeaderReconsideration"
+    assert "ItemReconsideration" not in provider.schemas_called()
 
 
 def test_reconsideration_skipped_without_findings(ctx: PromptContext) -> None:
@@ -99,14 +174,34 @@ def test_reconsideration_skipped_without_findings(ctx: PromptContext) -> None:
         samples.analysis().evidence_map(), samples.analysis()
     )
 
-    assert "Reconsideration" not in provider.schemas_called()
+    assert "ItemReconsideration" not in provider.schemas_called()
     assert result.reconsideration is None
     assert result.draft == result.draft_initial
 
 
+def test_failed_item_is_retried_once(ctx: PromptContext) -> None:
+    outputs = samples.all_stage_outputs(findings=False)
+    failures = iter([LLMProviderError("overloaded")])
+
+    def flaky(request: CompletionRequest) -> object:
+        ref = samples.item_ref(request)
+        if ref == "3" and (e := next(failures, None)):
+            return e
+        return samples.item_draft(ref)
+
+    outputs["ItemDraft"] = flaky
+    provider = ScriptedProvider(outputs)
+
+    result = pipeline(ctx, provider).run_drafting(
+        samples.analysis().evidence_map(), samples.analysis()
+    )
+    assert provider.schemas_called().count("ItemDraft") == 6
+    assert len(result.draft.items) == 5
+
+
 def test_stage_failure_names_the_stage(ctx: PromptContext) -> None:
     outputs = samples.all_stage_outputs()
-    outputs["DraftMinutes"] = LLMProviderError("quota exceeded")
+    outputs["ItemDraft"] = LLMProviderError("quota exceeded")
 
     with pytest.raises(StageError) as exc:
         pipeline(ctx, ScriptedProvider(outputs)).run_drafting(

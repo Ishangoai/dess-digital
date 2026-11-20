@@ -1,5 +1,5 @@
-# Synthetic test profile. Invented wording only: the real DESS Standard text is client
-# material and must never be committed (it lives in the gitignored reference/ folder).
+# Schema 1 test profile (structured dimensions), kept to test reading old versions.
+# Invented wording only.
 schema_version: 1
 name: Test Standard Profile
 description: Minimal profile used by the test suite.

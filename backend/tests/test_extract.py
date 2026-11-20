@@ -3,7 +3,7 @@ import io
 import docx
 import pytest
 
-from app.minutes.extract import UnsupportedFileError, extract_text
+from app.minutes.extract import UnsupportedFileError, docx_to_markdown, extract_text
 
 
 def docx_bytes(build) -> bytes:
@@ -49,3 +49,26 @@ def test_unsupported_type() -> None:
 def test_corrupt_docx() -> None:
     with pytest.raises(UnsupportedFileError):
         extract_text("agenda.docx", b"not a zip")
+
+
+def test_docx_to_markdown_keeps_headings_lists_and_tables() -> None:
+    def build(d) -> None:
+        d.add_paragraph("Minuting standards", style="Title")
+        d.add_heading("MP4 Outcomes", level=1)
+        d.add_paragraph("Record what was decided.")
+        d.add_paragraph("Never infer approval", style="List Bullet")
+        d.add_paragraph("Keep conditions", style="List Bullet")
+        table = d.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Outcome"
+        table.cell(0, 1).text = "Meaning"
+        table.cell(1, 0).text = "noted"
+        table.cell(1, 1).text = "received | no decision"
+
+    markdown = docx_to_markdown(docx_bytes(build), heading_offset=1)
+    assert markdown.split("\n\n") == [
+        "## Minuting standards",
+        "### MP4 Outcomes",
+        "Record what was decided.",
+        "- Never infer approval\n- Keep conditions",
+        "| Outcome | Meaning |\n| --- | --- |\n| noted | received \| no decision |\n",
+    ]
