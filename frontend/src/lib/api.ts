@@ -236,6 +236,55 @@ export interface ProfileVersion extends VersionSummary {
 	};
 }
 
+// ── Amendment Proposal types ────────────────────────────────────────────────
+
+export type AmendmentStatus = 'proposed' | 'accepted' | 'rejected' | 'deferred';
+export type AmendmentOperation = 'add' | 'replace' | 'remove';
+export type AmendmentTargetType = 'provision' | 'application_note';
+
+export interface ProposalCreate {
+	target_dimension: string;
+	target_provision: string | null;
+	target_type: AmendmentTargetType;
+	operation: AmendmentOperation;
+	proposed_text: string | null;
+	kind: string | null;
+	provenance: string | null;
+	scope: string | null;
+	reason: string | null;
+	evidence: string | null;
+}
+
+export interface ProposalOut {
+	id: string;
+	amendment_set_id: string;
+	target_dimension: string;
+	target_provision: string | null;
+	target_type: AmendmentTargetType;
+	operation: AmendmentOperation;
+	proposed_text: string | null;
+	kind: string | null;
+	provenance: string | null;
+	scope: string | null;
+	reason: string | null;
+	evidence: string | null;
+	status: AmendmentStatus;
+	decided_by: string | null;
+	decided_at: string | null;
+	conflict_warning: string | null;
+	created_at: string;
+}
+
+export interface AmendmentSetOut {
+	id: string;
+	profile_version_id: string;
+	origin: string;
+	title: string | null;
+	created_by: string | null;
+	created_at: string;
+	proposals: ProposalOut[];
+}
+
 export class ApiError extends Error {
 	constructor(
 		public status: number,
@@ -290,6 +339,14 @@ function post(path: string, body?: unknown, f: Fetch = fetch) {
 	});
 }
 
+function patch(path: string, body?: unknown, f: Fetch = fetch) {
+	return f(path, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: body === undefined ? undefined : JSON.stringify(body)
+	});
+}
+
 export const api = {
 	listDrafts: (f: Fetch = fetch) => json<DraftRunSummary[]>(f('/api/drafts?limit=50')),
 	getDraft: (id: string, f: Fetch = fetch) =>
@@ -320,7 +377,7 @@ export const api = {
 		json<ProfileVersion>(f(`/api/profiles/${slug}/versions/${n}`)),
 	createVersion: (slug: string, content: unknown, change_summary: string) =>
 		json<ProfileVersion>(
-			post(`/api/profiles/${slug}/versions`, {
+			post(`/api/profiles/${slug}/versions?admin=true`, {
 				content,
 				change_summary: change_summary || null,
 				created_by: 'web-ui'
@@ -329,6 +386,30 @@ export const api = {
 	setStatus: (slug: string, n: number, status: VersionStatus) =>
 		json<ProfileVersion>(
 			post(`/api/profiles/${slug}/versions/${n}/status`, { status, by: 'web-ui' })
+		),
+
+	// Amendment sets
+	listAmendmentSets: (slug: string, f: Fetch = fetch) =>
+		json<AmendmentSetOut[]>(f(`/api/profiles/${slug}/amendment-sets`)),
+	getAmendmentSet: (slug: string, setId: string, f: Fetch = fetch) =>
+		json<AmendmentSetOut>(f(`/api/profiles/${slug}/amendment-sets/${setId}`)),
+	updateProposal: (
+		slug: string,
+		setId: string,
+		proposalId: string,
+		body: { status?: AmendmentStatus; proposed_text?: string; decided_by?: string },
+		f: Fetch = fetch
+	) =>
+		json<ProposalOut>(
+			patch(`/api/profiles/${slug}/amendment-sets/${setId}/proposals/${proposalId}`, body, f)
+		),
+	applyAmendmentSet: (slug: string, setId: string, confirmedBy: string | null, f: Fetch = fetch) =>
+		json<ProfileVersion>(
+			post(
+				`/api/profiles/${slug}/amendment-sets/${setId}/apply`,
+				{ confirmed_by: confirmedBy || null },
+				f
+			)
 		)
 };
 

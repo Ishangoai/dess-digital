@@ -72,6 +72,9 @@
 			{#if profile.based_on_slug}, based on {profile.based_on_slug}{/if}
 		</p>
 		{#if profile.description}<p>{profile.description}</p>{/if}
+		<div class="row header-actions">
+			<a class="btn primary small" href="/profiles/{profile.slug}/amendments">Review amendment proposals</a>
+		</div>
 	</div>
 
 	{#if message}<p class="alert ok">{message}</p>{/if}
@@ -108,7 +111,7 @@
 		</div>
 
 		<details>
-			<summary>Upload a new version</summary>
+			<summary><span class="muted small">Administrator: upload a new version (bypasses amendment workflow)</span></summary>
 			<form class="stack upload" onsubmit={upload}>
 				<label class="field">
 					Profile file (.yaml or .json)
@@ -150,6 +153,10 @@
 <style>
 	p {
 		margin: 0;
+	}
+
+	.header-actions {
+		margin-top: 0.6rem;
 	}
 
 	.active {

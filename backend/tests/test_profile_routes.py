@@ -80,10 +80,19 @@ def test_create_profile_and_conflict(client: TestClient) -> None:
     assert client.get("/api/profiles/audit-committee/active").status_code == 404
 
 
+def test_direct_version_creation_requires_admin(
+    client: TestClient, seeded: ProfileContent
+) -> None:
+    content = seeded.model_dump(mode="json")
+    blocked = client.post("/api/profiles/std/versions", json={"content": content})
+    assert blocked.status_code == 403
+    assert "restricted to administrators" in blocked.json()["detail"]
+
+
 def test_version_lifecycle(client: TestClient, seeded: ProfileContent) -> None:
     content = seeded.model_dump(mode="json") | {"description": "Second edition"}
     created = client.post(
-        "/api/profiles/std/versions",
+        "/api/profiles/std/versions?admin=true",
         json={"content": content, "change_summary": "tweak", "created_by": "fiifi"},
     )
     assert created.status_code == 201
@@ -103,7 +112,7 @@ def test_version_lifecycle(client: TestClient, seeded: ProfileContent) -> None:
 
 def test_floor_violation_is_422(client: TestClient, seeded: ProfileContent) -> None:
     content = seeded.model_dump(mode="json") | {"hard_floors": ["Anything goes."]}
-    response = client.post("/api/profiles/std/versions", json={"content": content})
+    response = client.post("/api/profiles/std/versions?admin=true", json={"content": content})
     assert response.status_code == 422
     assert response.json()["detail"] == {
         "floor_violations": ["hard_floors differ from the parent version"]
@@ -113,5 +122,5 @@ def test_floor_violation_is_422(client: TestClient, seeded: ProfileContent) -> N
 def test_invalid_content_is_422(client: TestClient, seeded: ProfileContent) -> None:
     content = seeded.model_dump(mode="json")
     content["writing_style"] = content["writing_style"][:3]
-    response = client.post("/api/profiles/std/versions", json={"content": content})
+    response = client.post("/api/profiles/std/versions?admin=true", json={"content": content})
     assert response.status_code == 422
