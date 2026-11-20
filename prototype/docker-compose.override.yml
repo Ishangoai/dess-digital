@@ -1,7 +1,0 @@
-# Serves the DESS prototype at /prototype/index.html from the existing web container.
-# Lives on the VM next to docker-compose.yml; `docker compose up -d` (and the deploy) picks it up.
-# No image or Caddyfile change. To take it offline, see README.md.
-services:
-  web:
-    volumes:
-      - ./prototype:/srv/prototype:ro
