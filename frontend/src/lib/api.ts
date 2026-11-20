@@ -206,6 +206,7 @@ export interface ProfileSummary {
 }
 
 export interface VersionSummary {
+	id: string;
 	version_number: number;
 	status: VersionStatus;
 	origin: string;

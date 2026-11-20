@@ -1,4 +1,5 @@
 from datetime import datetime
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +36,7 @@ class StatusChange(BaseModel):
 
 
 class VersionSummary(BaseModel):
+    id: uuid.UUID
     version_number: int
     status: ProfileVersionStatus
     origin: VersionOrigin
@@ -47,6 +49,7 @@ class VersionSummary(BaseModel):
     @classmethod
     def of(cls, v: MinutesProfileVersion) -> "VersionSummary":
         return cls(
+            id=v.id,
             version_number=v.version_number,
             status=v.status,
             origin=v.origin,
