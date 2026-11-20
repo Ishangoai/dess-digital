@@ -15,6 +15,7 @@ from app.minutes.llm_schemas import (
     ValidationReport,
 )
 from app.models.draft import DraftRun, DraftStatus
+from app.schemas.edits import EditedDocumentSummary
 from app.services.draft import bundle_for
 
 
@@ -110,6 +111,8 @@ class DraftRunOut(DraftRunSummary):
     draft_initial: DraftMinutes | None = None
     validation: ValidationReport | None = None
     reconsideration: Reconsideration | None = None
+    # The latest edited copy uploaded, if any.
+    edited_document: EditedDocumentSummary | None = None
 
     @classmethod
     def of(cls, run: DraftRun, debug: bool = False) -> "DraftRunOut":
@@ -131,6 +134,9 @@ class DraftRunOut(DraftRunSummary):
                 output_tokens=sum(c.output_tokens for c in calls),
                 total_tokens=sum(c.input_tokens + c.output_tokens for c in calls),
                 latency_ms=sum(c.latency_ms for c in calls),
+            ),
+            edited_document=(
+                EditedDocumentSummary.of(run.edited_documents[-1]) if run.edited_documents else None
             ),
         )
         if debug:

@@ -21,13 +21,23 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.llm import LLMClient, get_llm_client
+from app.minutes.amendments import AmendmentError
 from app.minutes.docx_export import DOCX_MEDIA_TYPE
 from app.minutes.evidence import MeetingInfo, SourceRole
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import EvidenceMap
-from app.models.draft import DraftRun, DraftStatus
+from app.models.draft import ClassificationStatus, DraftRun, DraftStatus, EditedDocument
 from app.schemas.draft import DraftRunOut, DraftRunSummary, LLMCallDetail, MappingReview
+from app.schemas.edits import (
+    AmendmentProposalOut,
+    ApplyAmendments,
+    EditedDocumentOut,
+    ProposalUpdate,
+)
+from app.services import amendments as amendments_svc
 from app.services import draft as svc
+from app.services import edits as edits_svc
+from app.services import profile as profile_svc
 
 router = APIRouter(prefix="/drafts", tags=["Draft minutes"])
 
@@ -42,6 +52,16 @@ def llm_client() -> LLMClient:
 
 
 LLM = Annotated[LLMClient, Depends(llm_client)]
+
+
+def optional_llm_client() -> LLMClient | None:
+    try:
+        return get_llm_client()
+    except ValueError:
+        return None
+
+
+OptionalLLM = Annotated[LLMClient | None, Depends(optional_llm_client)]
 
 
 def _run(db: Session, run_id: uuid.UUID) -> DraftRun:
@@ -197,9 +217,9 @@ def generate_draft(
     return DraftRunOut.of(run)
 
 
-def _docx_response(run: DraftRun, template: bytes | None = None) -> Response:
+def _docx_response(db: Session, run: DraftRun, template: bytes | None = None) -> Response:
     try:
-        content = svc.render_document(run, template)
+        content = edits_svc.export_document(db, run, template).data
     except svc.InvalidStateError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     except UnsupportedFileError as e:
@@ -211,8 +231,8 @@ def _docx_response(run: DraftRun, template: bytes | None = None) -> Response:
 
 @router.get("/{run_id}/document.docx", response_class=Response)
 def download_document(run_id: uuid.UUID, db: DB) -> Response:
-    """The draft as Word, with clarification questions as comments."""
-    return _docx_response(_run(db, run_id))
+    """The draft as Word, with clarification questions as comments. Each download is stored."""
+    return _docx_response(db, _run(db, run_id))
 
 
 @router.post("/{run_id}/document", response_class=Response)
@@ -222,7 +242,117 @@ async def download_document_with_template(
     template: Annotated[UploadFile, File(description="Word template (.docx)")],
 ) -> Response:
     """The draft built into your Word template, at a {{MINUTES}} paragraph if present."""
-    data = await template.read(settings.minutes_max_upload_bytes + 1)
+    data = await _read_limited(template, "template")
+    return _docx_response(db, _run(db, run_id), data)
+
+
+async def _read_limited(file: UploadFile, what: str) -> bytes:
+    data = await file.read(settings.minutes_max_upload_bytes + 1)
     if len(data) > settings.minutes_max_upload_bytes:
-        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "template is too large")
-    return _docx_response(_run(db, run_id), data)
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"{what} is too large")
+    return data
+
+
+@router.post("/{run_id}/edited-document", status_code=status.HTTP_201_CREATED)
+async def upload_edited_document(
+    run_id: uuid.UUID,
+    db: DB,
+    llm: OptionalLLM,
+    tasks: BackgroundTasks,
+    file: Annotated[UploadFile, File(description="The edited minutes (.docx)")],
+) -> EditedDocumentOut:
+    """Upload the minutes as edited in Word and compare them with the downloaded draft.
+
+    If an LLM is configured, the edits are then explained after the response; poll
+    GET /api/drafts/{id}/edited-document until classification_status is completed or failed.
+    """
+    run = _run(db, run_id)
+    data = await _read_limited(file, file.filename or "the file")
+    try:
+        document = edits_svc.upload_edited(db, run, file.filename or "edited.docx", data)
+    except svc.InvalidStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except UnsupportedFileError as e:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(e)) from e
+    if llm is not None and edits_svc.request_classification(db, document):
+        amendments_svc.request_proposals(db, document)
+        tasks.add_task(amendments_svc.learn_in_background, db.get_bind(), document.id, llm)
+    return EditedDocumentOut.of(document)
+
+
+@router.post("/{run_id}/edited-document/classify", status_code=status.HTTP_202_ACCEPTED)
+def classify_edits(
+    run_id: uuid.UUID, db: DB, llm: LLM, tasks: BackgroundTasks
+) -> EditedDocumentOut:
+    """Explain the latest edited copy's changes and propose rule changes again.
+
+    If the edits were explained and only the proposals failed, only those are redone.
+    """
+    document = _edited(db, run_id)
+    found = document.amendments
+    if found is not None and found.applied_version_id is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "the rule changes were already applied")
+    assert document.comparison is not None
+    explained = document.comparison.classification_status == ClassificationStatus.COMPLETED
+    if explained and found is not None and found.status == ClassificationStatus.FAILED:
+        if not amendments_svc.request_proposals(db, document):
+            raise HTTPException(status.HTTP_409_CONFLICT, "rule changes are already being written")
+        tasks.add_task(
+            amendments_svc.learn_in_background, db.get_bind(), document.id, llm, explain=False
+        )
+        return EditedDocumentOut.of(document)
+    if not edits_svc.request_classification(db, document):
+        raise HTTPException(status.HTTP_409_CONFLICT, "the edits are already being explained")
+    amendments_svc.request_proposals(db, document)
+    tasks.add_task(amendments_svc.learn_in_background, db.get_bind(), document.id, llm)
+    return EditedDocumentOut.of(document)
+
+
+@router.patch("/{run_id}/amendments/{proposal_id}")
+def update_amendment(
+    run_id: uuid.UUID, proposal_id: uuid.UUID, body: ProposalUpdate, db: DB
+) -> AmendmentProposalOut:
+    """Accept, reject or defer a proposed rule change, or reword it."""
+    found = _edited(db, run_id).amendments
+    proposal = next((p for p in found.proposals if p.id == proposal_id), None) if found else None
+    if found is None or proposal is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such proposed change")
+    try:
+        amendments_svc.update_proposal(db, proposal, status=body.status, text=body.text, by=body.by)
+    except amendments_svc.AmendmentStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    return AmendmentProposalOut.of(proposal, amendments_svc.current_rules(found))
+
+
+@router.post("/{run_id}/amendments/apply")
+def apply_amendments(
+    run_id: uuid.UUID, db: DB, body: ApplyAmendments | None = None
+) -> EditedDocumentOut:
+    """Create the next profile version with the accepted changes and make it active."""
+    document = _edited(db, run_id)
+    try:
+        amendments_svc.apply(db, document, by=body.by if body else None)
+    except amendments_svc.AmendmentStateError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except profile_svc.FloorViolationError as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, {"floor_violations": e.violations}
+        ) from e
+    except AmendmentError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
+    return EditedDocumentOut.of(document)
+
+
+@router.get("/{run_id}/edited-document")
+def get_edited_document(run_id: uuid.UUID, db: DB) -> EditedDocumentOut:
+    """The latest edited copy, its comparison with the draft and the proposed rule changes."""
+    return EditedDocumentOut.of(_edited(db, run_id))
+
+
+def _edited(db: Session, run_id: uuid.UUID) -> EditedDocument:
+    document = edits_svc.latest_edited(_run(db, run_id))
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no edited minutes uploaded yet")
+    return document

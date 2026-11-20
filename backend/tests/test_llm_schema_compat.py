@@ -5,6 +5,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from app.minutes.amendments import AmendmentDraft
+from app.minutes.edit_review import EditReview
 from app.minutes.llm_schemas import (
     DraftMinutes,
     EvidenceAnalysis,
@@ -13,7 +15,15 @@ from app.minutes.llm_schemas import (
     ValidationReport,
 )
 
-STAGE_SCHEMAS = [EvidenceAnalysis, PolicySelection, DraftMinutes, ValidationReport, Reconsideration]
+STAGE_SCHEMAS = [
+    EvidenceAnalysis,
+    PolicySelection,
+    DraftMinutes,
+    ValidationReport,
+    Reconsideration,
+    EditReview,
+    AmendmentDraft,
+]
 
 
 def walk(node: Any, path: str = "#"):

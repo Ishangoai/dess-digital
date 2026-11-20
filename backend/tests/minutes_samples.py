@@ -1,5 +1,17 @@
 """Stage outputs for the invented Northbridge meeting in fixtures/minutes."""
 
+import re
+from collections.abc import Callable
+
+from app.llm.types import CompletionRequest
+from app.minutes.amendments import AmendmentDraft
+from app.minutes.edit_review import (
+    EditCause,
+    EditClassification,
+    EditKind,
+    EditReview,
+    Support,
+)
 from app.minutes.llm_schemas import (
     AgendaItem,
     AnchorKind,
@@ -33,6 +45,7 @@ from app.minutes.llm_schemas import (
     Treatment,
     ValidationReport,
 )
+from app.minutes.profile_content import DimensionCode
 
 
 def ref(start: int, end: int, source: str = "T") -> LineRef:
@@ -263,3 +276,45 @@ def all_stage_outputs(findings: bool = True) -> dict:
         "ValidationReport": validation(findings),
         "Reconsideration": reconsideration(),
     }
+
+
+def fake_edit_review(
+    kind: EditKind = EditKind.WORDING_OR_STYLE,
+    dimension: DimensionCode = DimensionCode.WS5,
+    cause: EditCause = EditCause.PROFILE_SILENT_OR_DIFFERENT,
+) -> Callable[[CompletionRequest], EditReview]:
+    """An edit reviewer that gives every change it is asked about the same classification."""
+
+    def respond(request: CompletionRequest) -> EditReview:
+        ids = re.findall(r"^(C\d+) \(", request.messages[-1].content, re.MULTILINE)
+        return EditReview(
+            classifications=[
+                EditClassification(
+                    change_id=i,
+                    kind=kind,
+                    dimension=dimension,
+                    cause=cause,
+                    support=Support.NOT_APPLICABLE,
+                    support_refs=[],
+                    profile_text=None,
+                    reason="Invented reason.",
+                )
+                for i in ids
+            ]
+        )
+
+    return respond
+
+
+def fake_amendment(**values: object) -> AmendmentDraft:
+    """A proposal writer that adds the same invented rule for every pattern."""
+    base = {
+        "operation": "add",
+        "target_rule_id": None,
+        "text": "Record the Board's thanks where it gives them.",
+        "kind": "preference",
+        "overlap": "none",
+        "overlap_with": None,
+        "reason": "Invented reason.",
+    }
+    return AmendmentDraft.model_validate({**base, **values})

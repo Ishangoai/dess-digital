@@ -5,11 +5,22 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base, JSONType
+from app.minutes.amendments import Operation, Overlap
 from app.minutes.evidence import SourceRole
+from app.minutes.profile_content import Provenance, ProvisionKind
 from app.models.profile import MinutesProfileVersion, str_enum, utcnow
 
 
@@ -57,6 +68,12 @@ class DraftRun(Base):
     llm_calls: Mapped[list["LLMCall"]] = relationship(
         back_populates="run", order_by="LLMCall.created_at", cascade="all, delete-orphan"
     )
+    exports: Mapped[list["ExportedDocument"]] = relationship(
+        back_populates="run", order_by="ExportedDocument.created_at", cascade="all, delete-orphan"
+    )
+    edited_documents: Mapped[list["EditedDocument"]] = relationship(
+        back_populates="run", order_by="EditedDocument.uploaded_at", cascade="all, delete-orphan"
+    )
 
 
 class DraftDocument(Base):
@@ -97,3 +114,142 @@ class LLMCall(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[DraftRun] = relationship(back_populates="llm_calls")
+
+
+class ExportedDocument(Base):
+    """A Word file exactly as it was downloaded, so an edited copy can be compared with it."""
+
+    __tablename__ = "exported_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("draft_runs.id"))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    used_template: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The DraftMinutes exported, and where its paragraphs and questions went (ExportManifest).
+    draft: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    run: Mapped[DraftRun] = relationship(back_populates="exports")
+
+
+class EditedDocument(Base):
+    """The professional's edited copy of an export."""
+
+    __tablename__ = "edited_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("draft_runs.id"))
+    export_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exported_documents.id"))
+    filename: Mapped[str] = mapped_column(String(255))
+    data: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    sha256: Mapped[str] = mapped_column(String(64))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    run: Mapped[DraftRun] = relationship(back_populates="edited_documents")
+    export: Mapped[ExportedDocument] = relationship()
+    comparison: Mapped["DocumentComparison | None"] = relationship(
+        back_populates="edited_document", cascade="all, delete-orphan"
+    )
+    amendments: Mapped["AmendmentSet | None"] = relationship(
+        back_populates="edited_document", cascade="all, delete-orphan"
+    )
+
+
+class ClassificationStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"  # some or all items could not be classified
+
+
+class DocumentComparison(Base):
+    """Edited paragraphs lined up with the export (docx_compare.Comparison as JSON)."""
+
+    __tablename__ = "document_comparisons"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    edited_document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("edited_documents.id"), unique=True
+    )
+    result: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # What each edit was and why (edit_review.EditClassificationResult as JSON).
+    classification: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    classification_status: Mapped[ClassificationStatus | None] = mapped_column(
+        str_enum(ClassificationStatus)
+    )
+    classification_error: Mapped[str | None] = mapped_column(Text)
+    classified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    edited_document: Mapped[EditedDocument] = relationship(back_populates="comparison")
+
+
+class ProposalStatus(StrEnum):
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    DEFERRED = "deferred"  # left undecided when the others were applied
+
+
+class AmendmentSet(Base):
+    """Proposed changes to the profile version a draft used, learned from its edited copy."""
+
+    __tablename__ = "amendment_sets"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    edited_document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("edited_documents.id"), unique=True
+    )
+    profile_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("minutes_profile_versions.id"))
+    status: Mapped[ClassificationStatus] = mapped_column(str_enum(ClassificationStatus))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("minutes_profile_versions.id")
+    )
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_by: Mapped[str | None] = mapped_column(String(255))
+
+    edited_document: Mapped[EditedDocument] = relationship(back_populates="amendments")
+    profile_version: Mapped[MinutesProfileVersion] = relationship(foreign_keys=[profile_version_id])
+    applied_version: Mapped[MinutesProfileVersion | None] = relationship(
+        foreign_keys=[applied_version_id]
+    )
+    proposals: Mapped[list["AmendmentProposal"]] = relationship(
+        back_populates="amendment_set",
+        cascade="all, delete-orphan",
+        order_by="AmendmentProposal.position",
+    )
+
+
+class AmendmentProposal(Base):
+    __tablename__ = "amendment_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("amendment_sets.id"))
+    position: Mapped[int] = mapped_column(Integer)
+    pattern_id: Mapped[str] = mapped_column(String(16))
+    change_ids: Mapped[list[str]] = mapped_column(JSONType)
+    dimension: Mapped[str] = mapped_column(String(8))
+    operation: Mapped[Operation] = mapped_column(str_enum(Operation))
+    target_rule_id: Mapped[str | None] = mapped_column(String(128))
+    text: Mapped[str | None] = mapped_column(Text)  # as accepted, after any rewording
+    proposed_text: Mapped[str | None] = mapped_column(Text)  # as the model wrote it
+    kind: Mapped[ProvisionKind] = mapped_column(str_enum(ProvisionKind))
+    provenance: Mapped[Provenance] = mapped_column(
+        str_enum(Provenance), default=Provenance.PROFESSIONAL_PREFERENCE
+    )
+    overlap: Mapped[Overlap] = mapped_column(str_enum(Overlap))
+    overlap_with: Mapped[str | None] = mapped_column(String(128))
+    reason: Mapped[str] = mapped_column(Text)
+    refused: Mapped[str | None] = mapped_column(Text)  # why code will not apply it
+    status: Mapped[ProposalStatus] = mapped_column(
+        str_enum(ProposalStatus), default=ProposalStatus.PROPOSED
+    )
+    decided_by: Mapped[str | None] = mapped_column(String(255))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    amendment_set: Mapped[AmendmentSet] = relationship(back_populates="proposals")

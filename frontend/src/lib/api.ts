@@ -172,7 +172,202 @@ export interface DraftRun extends DraftRunSummary {
 	reconsideration?: {
 		decisions: { finding_id: string; decision: string; reason: string }[];
 	} | null;
+	edited_document: EditedDocumentSummary | null;
 }
+
+export type ChangeStatus = 'unchanged' | 'changed' | 'removed' | 'added' | 'moved';
+
+export interface TrackedChange {
+	kind: 'insertion' | 'deletion' | 'move_from' | 'move_to' | 'formatting';
+	text: string;
+	author: string | null;
+	date: string | null;
+}
+
+export interface DiffSegment {
+	op: 'equal' | 'insert' | 'delete';
+	text: string;
+}
+
+export interface ParagraphChange {
+	change_id: string;
+	status: ChangeStatus;
+	section: string;
+	from_section: string | null;
+	paragraph_id: string | null;
+	heading: boolean;
+	original: string | null;
+	edited: string | null;
+	original_index: number | null;
+	edited_index: number | null;
+	matched_by: 'bookmark' | 'text' | null;
+	similarity: number | null;
+	text_changed: boolean;
+	format_only: boolean;
+	diff: DiffSegment[];
+	tracked_changes: TrackedChange[];
+	comment_ids: string[];
+}
+
+export interface CommentThread {
+	comment_id: string;
+	author: string | null;
+	date: string | null;
+	text: string;
+	question_id: string | null;
+	resolved: boolean;
+	section: string | null;
+	paragraph_id: string | null;
+	edited_index: number | null;
+	replies: { comment_id: string; author: string | null; date: string | null; text: string }[];
+}
+
+export interface Comparison {
+	counts: Record<ChangeStatus, number>;
+	sections: {
+		section: string;
+		heading: string;
+		counts: Record<ChangeStatus, number>;
+		changes: ParagraphChange[];
+	}[];
+	comments: CommentThread[];
+	tracked_change_authors: string[];
+	bookmarks_expected: number;
+	bookmarks_found: number;
+}
+
+export interface EditedDocumentSummary {
+	id: string;
+	filename: string;
+	uploaded_at: string;
+	export_id: string;
+	exported_at: string;
+	export_used_template: boolean;
+}
+
+export type EditKind =
+	| 'factual_correction'
+	| 'content_added'
+	| 'content_removed'
+	| 'wording_or_style'
+	| 'structure';
+export type EditCause =
+	| 'evidence_misread'
+	| 'profile_not_applied'
+	| 'profile_silent_or_different'
+	| 'meeting_specific';
+export type EditRoute = 'draft_mistake' | 'meeting_only' | 'candidate_rule';
+
+export interface ClassifiedChange {
+	change_id: string;
+	section: string;
+	paragraph_id: string | null;
+	kind: EditKind;
+	dimension: string;
+	dimension_title: string;
+	cause: EditCause;
+	route: EditRoute;
+	support: 'transcript' | 'professional_knowledge' | 'not_applicable';
+	support_refs: LineRef[];
+	profile_text: string | null;
+	reason: string;
+	decided_by: 'rule' | 'model';
+	rule: string | null;
+}
+
+export interface EditPattern {
+	pattern_id: string;
+	kind: EditKind;
+	dimension: string;
+	dimension_title: string;
+	cause: EditCause;
+	route: EditRoute;
+	count: number;
+	change_ids: string[];
+	paragraph_ids: string[];
+	reasons: string[];
+}
+
+export interface EditClassification {
+	changes: ClassifiedChange[];
+	patterns: EditPattern[];
+	unclassified: string[];
+}
+
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type ProposalStatus = 'proposed' | 'accepted' | 'rejected' | 'deferred';
+
+export interface AmendmentProposal {
+	id: string;
+	pattern_id: string;
+	change_ids: string[];
+	dimension: string;
+	dimension_title: string;
+	operation: 'add' | 'replace' | 'remove';
+	target_rule_id: string | null;
+	current_text: string | null;
+	text: string | null;
+	proposed_text: string | null;
+	kind: string;
+	overlap: 'none' | 'duplicate' | 'conflict';
+	overlap_with: string | null;
+	reason: string;
+	refused: string | null;
+	status: ProposalStatus;
+	decided_by: string | null;
+	decided_at: string | null;
+}
+
+export interface AmendmentSet {
+	id: string;
+	status: JobStatus;
+	error: string | null;
+	profile_slug: string;
+	profile_name: string;
+	base_version: number;
+	applied_version: number | null;
+	applied_at: string | null;
+	proposals: AmendmentProposal[];
+}
+
+export interface EditedDocument extends EditedDocumentSummary {
+	comparison: Comparison;
+	classification_status: JobStatus | null;
+	classification_error: string | null;
+	classified_at: string | null;
+	classification: EditClassification | null;
+	amendments: AmendmentSet | null;
+}
+
+export const EDIT_KIND_LABELS: Record<EditKind, string> = {
+	factual_correction: 'Factual correction',
+	content_added: 'Content added',
+	content_removed: 'Content removed',
+	wording_or_style: 'Wording or style',
+	structure: 'Structure'
+};
+
+export const EDIT_CAUSE_LABELS: Record<EditCause, string> = {
+	evidence_misread: 'Evidence misread',
+	profile_not_applied: 'Profile not applied',
+	profile_silent_or_different: 'Possible new rule',
+	meeting_specific: 'This meeting only'
+};
+
+export const EDIT_ROUTES: Record<EditRoute, { title: string; hint: string }> = {
+	draft_mistake: {
+		title: 'Draft mistakes',
+		hint: 'The profile already covered these, or the evidence was misread. The draft got them wrong; no rule needs changing.'
+	},
+	meeting_only: {
+		title: 'This meeting only',
+		hint: 'Corrections that only apply to this meeting. Recorded, not carried forward.'
+	},
+	candidate_rule: {
+		title: 'Possible rule changes',
+		hint: 'The profile is silent here or says something different. These can become suggested changes for you to confirm.'
+	}
+};
 
 export interface SegmentReview {
 	segment_id: string;
@@ -312,6 +507,27 @@ export const api = {
 		);
 		return response.blob();
 	},
+	getEdited: (id: string, f: Fetch = fetch) =>
+		json<EditedDocument>(f(`/api/drafts/${id}/edited-document`)),
+	classifyEdits: (id: string) =>
+		json<EditedDocument>(post(`/api/drafts/${id}/edited-document/classify`)),
+	updateAmendment: (id: string, proposalId: string, change: { status?: ProposalStatus; text?: string }) =>
+		json<AmendmentProposal>(
+			fetch(`/api/drafts/${id}/amendments/${proposalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...change, by: 'web-ui' })
+			})
+		),
+	applyAmendments: (id: string) =>
+		json<EditedDocument>(post(`/api/drafts/${id}/amendments/apply`, { by: 'web-ui' })),
+	uploadEdited: (id: string, file: File) => {
+		const form = new FormData();
+		form.append('file', file);
+		return json<EditedDocument>(
+			fetch(`/api/drafts/${id}/edited-document`, { method: 'POST', body: form })
+		);
+	},
 
 	listProfiles: (f: Fetch = fetch) => json<ProfileSummary[]>(f('/api/profiles')),
 	getProfile: (slug: string, f: Fetch = fetch) =>
@@ -413,6 +629,14 @@ export const STAGE_INFO: Record<string, { label: string; about: string }> = {
 	validation: {
 		label: 'Check the draft',
 		about: 'Independently checks the draft and questions against the evidence and the profile.'
+	},
+	edit_review: {
+		label: 'Explain the edits',
+		about: "Explains each of the professional's edits for one agenda item and sorts it by cause."
+	},
+	amendment: {
+		label: 'Propose a rule change',
+		about: 'Turns one kind of edit into a change to the Minutes Profile and checks it against the existing rules.'
 	},
 	reconsideration: {
 		label: 'Reconsider',
