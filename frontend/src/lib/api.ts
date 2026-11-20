@@ -168,6 +168,7 @@ export interface DraftRun extends DraftRunSummary {
 		total_tokens: number;
 		latency_ms: number;
 	};
+	learned_amendment_set_id?: string | null;
 	validation?: { findings: Finding[]; summary: string } | null;
 	reconsideration?: {
 		decisions: { finding_id: string; decision: string; reason: string }[];
@@ -273,6 +274,14 @@ export interface ProposalOut {
 	decided_at: string | null;
 	conflict_warning: string | null;
 	created_at: string;
+}
+
+export interface AmendmentSetCreate {
+	profile_version_id: string;
+	origin: 'feedback' | 'customisation';
+	title?: string | null;
+	created_by?: string | null;
+	proposals: ProposalCreate[];
 }
 
 export interface AmendmentSetOut {
@@ -393,6 +402,8 @@ export const api = {
 		json<AmendmentSetOut[]>(f(`/api/profiles/${slug}/amendment-sets`)),
 	getAmendmentSet: (slug: string, setId: string, f: Fetch = fetch) =>
 		json<AmendmentSetOut>(f(`/api/profiles/${slug}/amendment-sets/${setId}`)),
+	createAmendmentSet: (slug: string, body: AmendmentSetCreate, f: Fetch = fetch) =>
+		json<AmendmentSetOut>(post(`/api/profiles/${slug}/amendment-sets`, body, f)),
 	updateProposal: (
 		slug: string,
 		setId: string,
@@ -410,7 +421,9 @@ export const api = {
 				{ confirmed_by: confirmedBy || null },
 				f
 			)
-		)
+		),
+	learnAmendments: (runId: string, f: Fetch = fetch) =>
+		json<AmendmentSetOut>(post(`/api/drafts/${runId}/learn-amendments`, undefined, f))
 };
 
 export const STATUS_LABELS: Record<DraftStatus, string> = {

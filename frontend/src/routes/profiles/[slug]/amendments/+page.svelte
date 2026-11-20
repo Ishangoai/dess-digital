@@ -15,6 +15,94 @@
 	let errors = $state<Record<string, string>>({});
 	let messages = $state<Record<string, string>>({});
 
+	// Propose amendment form state
+	let showCreateForm = $state(false);
+	let newTitle = $state('');
+	let newOrigin = $state<'customisation' | 'feedback'>('customisation');
+	let newTargetDim = $state('MP2');
+	let newTargetType = $state<'provision' | 'application_note'>('provision');
+	let newOperation = $state<'add' | 'replace' | 'remove'>('add');
+	let newTargetProvision = $state('');
+	let newKind = $state('preference');
+	let newProvenance = $state('professional_preference');
+	let newScope = $state('');
+	let newProposedText = $state('');
+	let newReason = $state('');
+	let newEvidence = $state('');
+	let createError = $state('');
+	let createBusy = $state(false);
+
+	const DIMENSIONS = [
+		{ code: 'MP1', title: 'Meeting and business context' },
+		{ code: 'MP2', title: 'Information and evidential basis' },
+		{ code: 'MP3', title: 'Materiality and proportionality' },
+		{ code: 'MP4', title: 'Outcomes and decisions' },
+		{ code: 'MP5', title: 'Decision reasoning' },
+		{ code: 'MP6', title: 'Challenge and oversight' },
+		{ code: 'MP7', title: 'Actions and delegation' },
+		{ code: 'MP8', title: 'Governance and procedure' },
+		{ code: 'MP9', title: 'Boundaries and integrity' },
+		{ code: 'WS1', title: 'Voice, tense and tone' },
+		{ code: 'WS2', title: 'Structure and sequence' },
+		{ code: 'WS3', title: 'Concision, clarity and explanation' },
+		{ code: 'WS4', title: 'Attribution' },
+		{ code: 'WS5', title: 'Expression of decisions and actions' },
+		{ code: 'WS6', title: 'Document conventions and presentation' }
+	];
+
+	async function submitProposal() {
+		createError = '';
+		if ((newOperation === 'add' || newOperation === 'replace') && !newProposedText.trim()) {
+			createError = 'Proposed text is required.';
+			return;
+		}
+		if (newOperation !== 'add' && newTargetType === 'provision' && !newTargetProvision.trim()) {
+			createError = 'Target provision ID is required for replace or remove.';
+			return;
+		}
+
+		const activeVer = profile.versions.find((v) => v.status === 'confirmed') ?? profile.versions[profile.versions.length - 1];
+		if (!activeVer) {
+			createError = 'No version found for this profile to amend.';
+			return;
+		}
+
+		createBusy = true;
+		try {
+			const res = await api.createAmendmentSet(profile.slug, {
+				profile_version_id: activeVer.id,
+				origin: newOrigin,
+				title: newTitle.trim() || null,
+				created_by: 'governance-professional',
+				proposals: [
+					{
+						target_dimension: newTargetDim,
+						target_provision: newTargetProvision.trim() || null,
+						target_type: newTargetType,
+						operation: newOperation,
+						proposed_text: newProposedText.trim() || null,
+						kind: newTargetType === 'provision' ? newKind : null,
+						provenance: newProvenance,
+						scope: newScope.trim() || null,
+						reason: newReason.trim() || null,
+						evidence: newEvidence.trim() || null
+					}
+				]
+			});
+			sets = [res, ...sets];
+			showCreateForm = false;
+			newTitle = '';
+			newProposedText = '';
+			newReason = '';
+			newEvidence = '';
+			newTargetProvision = '';
+		} catch (e) {
+			createError = errorText(e);
+		} finally {
+			createBusy = false;
+		}
+	}
+
 	// Per-proposal reword state
 	let rewordingId = $state<string | null>(null);
 	let rewordText = $state('');
@@ -87,13 +175,130 @@
 </script>
 
 <div class="stack contained">
-	<div>
-		<a class="small" href="/profiles/{profile.slug}">← {profile.name}</a>
-		<h1>Amendment proposals</h1>
-		<p class="muted">
-			Review, reword, and decide on granular amendment proposals before confirming them into a new profile version.
-		</p>
+	<div class="row header-bar">
+		<div>
+			<a class="small" href="/profiles/{profile.slug}">← {profile.name}</a>
+			<h1>Amendment proposals</h1>
+			<p class="muted">
+				Review, reword, and decide on granular amendment proposals before confirming them into a new profile version.
+			</p>
+		</div>
+		<button class="btn primary" onclick={() => (showCreateForm = !showCreateForm)}>
+			{showCreateForm ? 'Cancel' : '+ Propose amendment'}
+		</button>
 	</div>
+
+	{#if showCreateForm}
+		<section class="card stack create-card">
+			<h2>Propose a new amendment</h2>
+			<p class="muted small">
+				Propose a granular addition, replacement, or removal to this profile without uploading raw YAML.
+			</p>
+
+			{#if createError}
+				<div class="alert error">{createError}</div>
+			{/if}
+
+			<div class="row form-grid">
+				<label class="field half">
+					Target Dimension
+					<select bind:value={newTargetDim}>
+						{#each DIMENSIONS as d}
+							<option value={d.code}>{d.code} — {d.title}</option>
+						{/each}
+					</select>
+				</label>
+
+				<label class="field half">
+					Target Type
+					<select bind:value={newTargetType}>
+						<option value="provision">Provision</option>
+						<option value="application_note">Application note</option>
+					</select>
+				</label>
+			</div>
+
+			<div class="row form-grid">
+				<label class="field half">
+					Operation
+					<select bind:value={newOperation}>
+						<option value="add">Add (new rule)</option>
+						<option value="replace">Replace (existing rule)</option>
+						<option value="remove">Remove (delete rule)</option>
+					</select>
+				</label>
+
+				{#if newOperation !== 'add' && newTargetType === 'provision'}
+					<label class="field half">
+						Target Provision ID (e.g. mp2-information-basis)
+						<input type="text" bind:value={newTargetProvision} placeholder="e.g. ws4-names-for-actions" />
+					</label>
+				{/if}
+			</div>
+
+			<div class="row form-grid">
+				{#if newTargetType === 'provision'}
+					<label class="field half">
+						Provision Kind
+						<select bind:value={newKind}>
+							<option value="preference">Preference (standard customisation)</option>
+							<option value="requirement">Requirement (mandated)</option>
+							<option value="professional_default">Professional default</option>
+						</select>
+					</label>
+				{/if}
+
+				<label class="field half">
+					Provenance
+					<select bind:value={newProvenance}>
+						<option value="professional_preference">Professional preference</option>
+						<option value="explicit_requirement">Explicit requirement</option>
+						<option value="inferred">Inferred from practice</option>
+					</select>
+				</label>
+			</div>
+
+			<div class="row form-grid">
+				<label class="field half">
+					Batch Title (Optional)
+					<input type="text" bind:value={newTitle} placeholder="e.g. Audit Committee style adjustments" />
+				</label>
+
+				<label class="field half">
+					Scope (Optional)
+					<input type="text" bind:value={newScope} placeholder="e.g. Board, RemCo, or All" />
+				</label>
+			</div>
+
+			{#if newOperation !== 'remove'}
+				<label class="field">
+					Proposed Text (Plain English)
+					<textarea rows="3" bind:value={newProposedText} placeholder="State the rule or preference clearly in plain English..."></textarea>
+				</label>
+			{/if}
+
+			<div class="row form-grid">
+				<label class="field half">
+					Reason
+					<textarea rows="2" bind:value={newReason} placeholder="Why is this change being proposed?"></textarea>
+				</label>
+
+				<label class="field half">
+					Evidence
+					<textarea rows="2" bind:value={newEvidence} placeholder="What interview answer, sample minute, or mapping edit supports this?"></textarea>
+				</label>
+			</div>
+
+			<div class="row actions">
+				<button class="btn primary" disabled={createBusy} onclick={submitProposal}>
+					{createBusy ? 'Submitting...' : 'Submit proposal'}
+				</button>
+				<button class="btn" disabled={createBusy} onclick={() => (showCreateForm = false)}>
+					Cancel
+				</button>
+			</div>
+		</section>
+	{/if}
 
 	{#if sets.length === 0}
 		<section class="card">
@@ -423,15 +628,59 @@
 		margin-top: 0.25rem;
 	}
 
+	.header-bar {
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.create-card {
+		background: var(--bg-1, #fff);
+		border: 1px solid var(--accent, #0284c7);
+		border-radius: 8px;
+		padding: 1.25rem;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+	}
+
+	.create-card h2 {
+		margin: 0;
+		font-size: 1.25rem;
+	}
+
+	.form-grid {
+		gap: 1rem;
+		width: 100%;
+	}
+
+	.half {
+		flex: 1;
+		min-width: 240px;
+	}
+
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		font-size: 0.85rem;
+		font-weight: 500;
+	}
+
+	select,
+	input[type='text'],
 	textarea {
 		width: 100%;
 		font-family: inherit;
 		font-size: 0.95rem;
-		padding: 0.4rem;
+		padding: 0.45rem 0.6rem;
 		border: 1px solid var(--border, #ccc);
 		border-radius: 4px;
-		resize: vertical;
+		background: var(--bg-0, #fff);
 		box-sizing: border-box;
+	}
+
+	textarea {
+		resize: vertical;
 	}
 
 	p {

@@ -15,7 +15,6 @@ from app.models.amendment import (
 )
 from app.models.profile import VersionOrigin
 
-
 # ---------------------------------------------------------------------------
 # Input schemas
 # ---------------------------------------------------------------------------

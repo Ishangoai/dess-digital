@@ -1,8 +1,8 @@
 """Tests for amendment proposal and review REST endpoints."""
 
+import uuid
 from collections.abc import Iterator
 from unittest.mock import patch
-import uuid
 
 import pytest
 from fastapi import FastAPI

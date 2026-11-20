@@ -4,14 +4,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.llm.client import LLMClient
-from app.minutes.profile_content import ProfileContent, ProvisionKind, Provenance
-from app.models.amendment import AmendmentOperation, AmendmentStatus, AmendmentTargetType
+from app.minutes.profile_content import ProfileContent
+from app.models.amendment import AmendmentStatus
 from app.models.profile import VersionOrigin
 from app.services import amendment as amend_svc
 from app.services import profile as svc
 from app.services.amendment import ConflictCheckResult
 from tests.fakes import ScriptedProvider
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -41,9 +40,7 @@ def make_llm(scripted_response: ConflictCheckResult | None = None) -> LLMClient:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_flow_creates_new_confirmed_version(
-    db: Session, seeded_profile: tuple
-) -> None:
+def test_apply_flow_creates_new_confirmed_version(db: Session, seeded_profile: tuple) -> None:
     profile, version, content = seeded_profile
     llm = make_llm()
 
@@ -188,8 +185,8 @@ def test_reject_defer_excludes_from_new_version(db: Session, seeded_profile: tup
     p = next(p for p in ws4.provisions if p.id == "ws4-names-for-actions")
     # Only the accepted change should be applied (last one wins since both target same provision)
     assert p.text == "Accepted change."
+    assert new_version.change_summary is not None
     assert "Rejected change." not in new_version.change_summary
-
 
 # ---------------------------------------------------------------------------
 # Test 4: Deferred proposals excluded
@@ -234,7 +231,10 @@ def test_conflict_warning_stored(db: Session, seeded_profile: tuple) -> None:
     conflict_response = ConflictCheckResult(
         has_conflict=True,
         conflict_type="duplicate",
-        warning="This provision duplicates ws4-names-for-actions which already says the same thing.",
+        warning=(
+            "This provision duplicates ws4-names-for-actions "
+            "which already says the same thing."
+        ),
     )
     llm = make_llm(scripted_response=conflict_response)
 
@@ -256,7 +256,10 @@ def test_conflict_warning_stored(db: Session, seeded_profile: tuple) -> None:
     )
     proposal = aset.proposals[0]
     assert proposal.conflict_warning is not None
-    assert "duplicate" in proposal.conflict_warning.lower() or "ws4" in proposal.conflict_warning.lower()
+    assert (
+        "duplicate" in proposal.conflict_warning.lower()
+        or "ws4" in proposal.conflict_warning.lower()
+    )
     # Status should still be PROPOSED (conflict is a warning, not auto-rejection)
     assert proposal.status == AmendmentStatus.PROPOSED
 
@@ -292,7 +295,9 @@ def test_floor_protection_evidential_fundamental(db: Session, seeded_profile: tu
     assert proposal.status == AmendmentStatus.REJECTED
     assert proposal.conflict_warning is not None
     warning_lower = proposal.conflict_warning.lower()
-    assert "floor protection" in proposal.conflict_warning or "evidential fundamental" in warning_lower
+    assert (
+        "floor protection" in proposal.conflict_warning or "evidential fundamental" in warning_lower
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -353,3 +358,172 @@ def test_apply_with_no_accepted_raises(db: Session, seeded_profile: tuple) -> No
     # No proposal accepted — apply should fail
     with pytest.raises(amend_svc.AmendmentError):
         amend_svc.apply_amendment_set(db, aset)
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Application note modification and removal
+# ---------------------------------------------------------------------------
+
+
+def test_apply_application_note(db: Session, seeded_profile: tuple) -> None:
+    profile, version, content = seeded_profile
+    llm = make_llm()
+
+    aset = amend_svc.create_amendment_set(
+        db,
+        version,
+        origin=VersionOrigin.CUSTOMISATION,
+        proposals=[
+            {
+                "target_dimension": "MP2",
+                "target_type": "application_note",
+                "operation": "replace",
+                "proposed_text": "Updated application guidance for MP2.",
+                "reason": "Standardize MP2 application across committees.",
+            }
+        ],
+        llm=llm,
+    )
+    prop = aset.proposals[0]
+    amend_svc.update_proposal(db, prop, status=AmendmentStatus.ACCEPTED)
+
+    new_version = amend_svc.apply_amendment_set(db, aset)
+    new_content = svc.version_content(new_version)
+    mp2 = next(d for d in new_content.minuting_policy if d.code == "MP2")
+    assert mp2.application == "Updated application guidance for MP2."
+
+
+# ---------------------------------------------------------------------------
+# Test 10: Floor protection cannot be re-accepted
+# ---------------------------------------------------------------------------
+
+
+def test_floor_protection_cannot_be_reaccepted(db: Session, seeded_profile: tuple) -> None:
+    profile, version, content = seeded_profile
+    llm = make_llm()
+
+    aset = amend_svc.create_amendment_set(
+        db,
+        version,
+        origin=VersionOrigin.FEEDBACK,
+        proposals=[
+            {
+                "target_dimension": "MP4",
+                "target_provision": "mp4-no-silent-approval",
+                "target_type": "provision",
+                "operation": "remove",
+            }
+        ],
+        llm=llm,
+    )
+    prop = aset.proposals[0]
+    assert prop.status == AmendmentStatus.REJECTED
+    assert prop.conflict_warning is not None
+    assert "[FLOOR PROTECTION]" in prop.conflict_warning
+    with pytest.raises(amend_svc.FloorProtectionError):
+        amend_svc.update_proposal(db, prop, status=AmendmentStatus.ACCEPTED)
+
+
+# ---------------------------------------------------------------------------
+# Test 11: Learning from mapping diff
+# ---------------------------------------------------------------------------
+
+
+def test_learn_from_mapping_diff(db: Session, seeded_profile: tuple) -> None:
+    from app.minutes.evidence import LineRef
+    from app.minutes.llm_schemas import Association, EvidenceMap, EvidenceSegment
+    from app.models.draft import DraftRun, DraftStatus
+    from app.services.draft import (
+        LearnedProposalItem,
+        LearnedProposalsResponse,
+        diff_mapping,
+        learn_from_mapping_edits,
+    )
+
+    profile, version, content = seeded_profile
+
+    orig_map = EvidenceMap(
+        agenda_items=[],
+        additional_business=[],
+        segments=[
+            EvidenceSegment(
+                segment_id="S1",
+                source=LineRef(source_id="T", start=1, end=10),
+                item_ref="1",
+                association=Association.RELATED,
+                summary="Initial discussion",
+                apparent_outcome=None,
+            )
+        ],
+    )
+
+    edited_map = EvidenceMap(
+        agenda_items=[],
+        additional_business=[],
+        segments=[
+            EvidenceSegment(
+                segment_id="S1",
+                source=LineRef(source_id="T", start=1, end=10),
+                item_ref="2",
+                association=Association.PRIMARY,
+                summary="Substantive decision discussion",
+                apparent_outcome=None,
+            )
+        ],
+    )
+
+    diffs = diff_mapping(orig_map, edited_map)
+    assert len(diffs) == 1
+    assert "reassigned from Item '1' to Item '2'" in diffs[0]
+    assert "association changed from 'related' to 'primary'" in diffs[0]
+
+    # Now test learning via ScriptedProvider
+    learned_response = LearnedProposalsResponse(
+        has_proposals=True,
+        proposals=[
+            LearnedProposalItem(
+                target_dimension="MP2",
+                target_type="provision",
+                operation="add",
+                proposed_text="Always classify substantive outcome debate as primary evidence.",
+                reason="Observed user elevating related segment to primary.",
+                evidence="User reclassified S1 under Item 2.",
+            )
+        ],
+    )
+    provider = ScriptedProvider(
+        {
+            "LearnedProposalsResponse": learned_response,
+            "ConflictCheckResult": ConflictCheckResult(
+                has_conflict=False, conflict_type=None, warning=None
+            ),
+        }
+    )
+    llm = LLMClient(provider, "test-model")
+
+    # Create dummy DraftRun
+    run = DraftRun(
+        profile_version_id=version.id,
+        status=DraftStatus.COMPLETED,
+        analysis={
+            "agenda_items": [],
+            "additional_business": [],
+            "segments": [s.model_dump() for s in orig_map.segments],
+        },
+        mapping=edited_map.model_dump(),
+        mapping_edited=True,
+        meeting_info={"title": "Q3 Board Meeting"},
+    )
+    db.add(run)
+    db.flush()
+
+    aset = learn_from_mapping_edits(db, llm, run)
+    assert aset is not None
+    assert aset.origin == VersionOrigin.FEEDBACK
+    assert len(aset.proposals) == 1
+    p = aset.proposals[0]
+    assert p.target_dimension == "MP2"
+    assert p.status == AmendmentStatus.PROPOSED
+    assert p.proposed_text is not None
+    assert "substantive outcome debate" in p.proposed_text
+    assert run.meeting_info["learned_amendment_set_id"] == str(aset.id)

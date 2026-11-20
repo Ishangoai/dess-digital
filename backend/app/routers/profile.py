@@ -140,7 +140,6 @@ def change_version_status(slug: str, number: int, body: StatusChange, db: DB) ->
     return ProfileVersionOut.of(version)
 
 
-
 # ── Amendment sets ─────────────────────────────────────────────────────────────
 
 
@@ -228,14 +227,16 @@ def update_proposal(
     except amend_svc.AmendmentError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from e
     return ProposalOut.of(proposal)
-    return ProposalOut.of(proposal)
 
 
 @router.post("/{slug}/amendment-sets/{set_id}/apply", status_code=status.HTTP_201_CREATED)
 def apply_amendment_set(
     slug: str, set_id: _uuid.UUID, body: ApplySetRequest, db: DB
 ) -> ProfileVersionOut:
-    """Apply all accepted proposals in an amendment set to produce a new confirmed profile version."""
+    """
+    Apply all accepted proposals in an amendment set 
+    to produce a new confirmed profile version.
+    """
     _profile(db, slug)
     try:
         aset = amend_svc.get_amendment_set(db, set_id)

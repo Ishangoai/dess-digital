@@ -105,6 +105,7 @@ class DraftRunOut(DraftRunSummary):
     error_stage: str | None
     llm_calls: list[LLMCallOut]
     usage_total: UsageTotal
+    learned_amendment_set_id: uuid.UUID | None = None
     # Intermediate stages, only with ?debug=true
     selection: PolicySelection | None = None
     draft_initial: DraftMinutes | None = None
@@ -114,8 +115,11 @@ class DraftRunOut(DraftRunSummary):
     @classmethod
     def of(cls, run: DraftRun, debug: bool = False) -> "DraftRunOut":
         calls = [LLMCallOut.model_validate(c, from_attributes=True) for c in run.llm_calls]
+        learned_raw = (run.meeting_info or {}).get("learned_amendment_set_id")
+        learned_id = uuid.UUID(learned_raw) if learned_raw else None
         out = cls(
             **DraftRunSummary.of(run).model_dump(),
+            learned_amendment_set_id=learned_id,
             documents=[DocumentOut.model_validate(d, from_attributes=True) for d in run.documents],
             analysis=_load(EvidenceAnalysis, run.analysis),
             mapping=_load(EvidenceMap, run.mapping),

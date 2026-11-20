@@ -80,9 +80,7 @@ def test_create_profile_and_conflict(client: TestClient) -> None:
     assert client.get("/api/profiles/audit-committee/active").status_code == 404
 
 
-def test_direct_version_creation_requires_admin(
-    client: TestClient, seeded: ProfileContent
-) -> None:
+def test_direct_version_creation_requires_admin(client: TestClient, seeded: ProfileContent) -> None:
     content = seeded.model_dump(mode="json")
     blocked = client.post("/api/profiles/std/versions", json={"content": content})
     assert blocked.status_code == 403

@@ -26,6 +26,7 @@ from app.minutes.evidence import MeetingInfo, SourceRole
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import EvidenceMap
 from app.models.draft import DraftRun, DraftStatus
+from app.schemas.amendment import AmendmentSetOut
 from app.schemas.draft import DraftRunOut, DraftRunSummary, LLMCallDetail, MappingReview
 from app.services import draft as svc
 
@@ -195,6 +196,19 @@ def generate_draft(
             status.HTTP_422_UNPROCESSABLE_CONTENT, {"mapping_errors": e.errors}
         ) from e
     return DraftRunOut.of(run)
+
+
+@router.post("/{run_id}/learn-amendments", status_code=status.HTTP_201_CREATED)
+def learn_amendments(run_id: uuid.UUID, db: DB, llm: LLM) -> AmendmentSetOut:
+    """Analyze manual mapping edits made on this draft and create an amendment proposal set."""
+    run = _run(db, run_id)
+    aset = svc.learn_from_mapping_edits(db, llm, run)
+    if aset is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "No mapping edits to learn from or no new amendments could be inferred.",
+        )
+    return AmendmentSetOut.of(aset)
 
 
 def _docx_response(run: DraftRun, template: bytes | None = None) -> Response:

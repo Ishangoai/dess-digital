@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, cast
 
+from pydantic import BaseModel, Field
 from sqlalchemy import Connection, CursorResult, Engine, select, update
 from sqlalchemy.orm import Session
 
@@ -22,9 +23,12 @@ from app.minutes.evidence import (
 from app.minutes.extract import UnsupportedFileError, extract_text
 from app.minutes.llm_schemas import DraftMinutes, EvidenceAnalysis, EvidenceMap
 from app.minutes.pipeline import Pipeline, PipelineStage, StageError, StageResult
+from app.minutes.profile_content import Provenance, ProvisionKind
 from app.minutes.prompts import PromptContext
+from app.models.amendment import ProfileAmendmentSet
 from app.models.draft import DraftDocument, DraftRun, DraftStatus, LLMCall
-from app.models.profile import MinutesProfileVersion, utcnow
+from app.models.profile import MinutesProfileVersion, VersionOrigin, utcnow
+from app.services import amendment as amend_svc
 from app.services import profile as profile_svc
 
 RAW_OUTPUT_LIMIT = 20_000
@@ -277,7 +281,160 @@ def generate(
     run.status = DraftStatus.COMPLETED
     run.completed_at = utcnow()
     db.commit()
+
+    if run.mapping_edited:
+        learn_from_mapping_edits(db, llm, run)
+
     return run
+
+
+# learning from mapping edits
+
+
+def diff_mapping(original: EvidenceMap, edited: EvidenceMap) -> list[str]:
+    orig_by_id = {s.segment_id: s for s in original.segments}
+    edited_by_id = {s.segment_id: s for s in edited.segments}
+
+    diffs: list[str] = []
+
+    # Segments added by user
+    for sid, es in edited_by_id.items():
+        if sid not in orig_by_id:
+            diffs.append(
+                f"Added segment {sid} (source {es.source.source_id}, "
+                f"lines {es.source.start}-{es.source.end}) "
+                f"under Item '{es.item_ref or 'Unassigned'}' "
+                f"with association '{es.association}': \"{es.summary}\""
+            )
+
+    # Segments removed by user
+    for sid, os in orig_by_id.items():
+        if sid not in edited_by_id:
+            diffs.append(
+                f"Removed segment {sid} (previously under Item '{os.item_ref or 'Unassigned'}', "
+                f"association '{os.association}'): \"{os.summary}\""
+            )
+
+    # Segments modified by user
+    for sid, es in edited_by_id.items():
+        if sid in orig_by_id:
+            os = orig_by_id[sid]
+            changes = []
+            if es.item_ref != os.item_ref:
+                changes.append(
+                    f"reassigned from Item '{os.item_ref or 'None'}' "
+                    f"to Item '{es.item_ref or 'None'}'"                )
+            if es.association != os.association:
+                changes.append(f"association changed from '{os.association}' to '{es.association}'")
+            if (es.source.start, es.source.end) != (os.source.start, os.source.end):
+                changes.append(
+                f"lines changed from {os.source.start}-{os.source.end} "
+                f"to {es.source.start}-{es.source.end}"                )
+            if es.summary != os.summary:
+                changes.append(f'summary updated from "{os.summary}" to "{es.summary}"')
+            if changes:
+                diffs.append(
+                    f"Segment {sid} ({es.source.source_id}:{es.source.start}-{es.source.end}): "
+                    + "; ".join(changes)
+                )
+
+    return diffs
+
+
+class LearnedProposalItem(BaseModel):
+    target_dimension: str
+    target_type: str = "provision"
+    operation: str = "add"
+    target_provision: str | None = None
+    proposed_text: str
+    reason: str
+    evidence: str
+
+
+class LearnedProposalsResponse(BaseModel):
+    has_proposals: bool
+    proposals: list[LearnedProposalItem] = Field(default_factory=list)
+
+
+def learn_from_mapping_edits(
+    db: Session,
+    llm: LLMClient | None,
+    run: DraftRun,
+) -> ProfileAmendmentSet | None:
+    """Analyze changes made to the evidence mapping and infer profile amendment proposals."""
+    if not run.mapping_edited or not run.analysis or not run.mapping or llm is None:
+        return None
+
+    orig_map = EvidenceMap.model_validate(run.analysis)
+    edited_map = EvidenceMap.model_validate(run.mapping)
+    diffs = diff_mapping(orig_map, edited_map)
+    if not diffs:
+        return None
+
+    meeting_title = (run.meeting_info or {}).get("title") or run.id.hex[:8]
+    diff_text = "\n".join(f"- {d}" for d in diffs)
+
+    prompt = (
+        "You are an expert governance assistant helping to learn standing "
+        "organisation preferences from human edits.\n\n"
+        f"Meeting: {meeting_title}\n"
+        "The governance professional manually made the following corrections "
+        f"to the AI's evidence mapping:\n{diff_text}\n\n"
+        "Analyze these editorial corrections. Infer what recurring Minuting "
+        "Policy (MP1-MP9) or Writing Style (WS1-WS6) rule or preference the "
+        "professional is enforcing (e.g. MP2 for evidential basis, MP3 for "
+        "materiality thresholds, MP8 for procedural handling).\n"
+        "Never alter or contradict evidential fundamentals.\n"
+        "Generate 1 to 2 granular, actionable amendment proposals.\n"
+        "Reply with has_proposals=true and the proposals, or "
+        "has_proposals=false if no general rule can be inferred."
+    )
+
+    try:
+        result = llm.generate_structured(prompt, LearnedProposalsResponse)
+    except Exception:
+        return None
+
+    if not result.output.has_proposals or not result.output.proposals:
+        return None
+
+    proposals_payload = []
+    for p in result.output.proposals:
+        proposals_payload.append(
+            {
+                "target_dimension": p.target_dimension,
+                "target_provision": p.target_provision,
+                "target_type": p.target_type,
+                "operation": p.operation,
+                "proposed_text": p.proposed_text,
+                "kind": ProvisionKind.PREFERENCE.value,
+                "provenance": Provenance.INFERRED.value,
+                "reason": p.reason,
+                "evidence": p.evidence,
+            }
+        )
+
+    title = f"Learned from mapping edits ({meeting_title})"
+    try:
+        aset = amend_svc.create_amendment_set(
+            db,
+            run.profile_version,
+            origin=VersionOrigin.FEEDBACK,
+            title=title,
+            created_by="mapping-learner",
+            proposals=proposals_payload,
+            llm=llm,
+        )
+    except Exception:
+        return None
+
+    meeting_info = dict(run.meeting_info or {})
+    meeting_info["learned_amendment_set_id"] = str(aset.id)
+    run.meeting_info = meeting_info
+    db.commit()
+    db.refresh(run)
+
+    return aset
 
 
 def render_document(run: DraftRun, template: bytes | None = None) -> bytes:

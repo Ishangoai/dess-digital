@@ -1,7 +1,6 @@
 """Amendment proposal and review service for minutes profile versioning."""
 
 import uuid
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -10,7 +9,6 @@ from sqlalchemy.orm import Session
 from app.llm.client import LLMClient
 from app.minutes.profile_content import (
     Dimension,
-    DimensionCode,
     ProfileContent,
     Provenance,
     Provision,
@@ -25,9 +23,6 @@ from app.models.amendment import (
 )
 from app.models.profile import MinutesProfileVersion, VersionOrigin, utcnow
 from app.services.profile import (
-    FloorViolationError,
-    VersionNotFoundError,
-    check_floors,
     confirm,
     create_version,
     version_content,
@@ -102,9 +97,7 @@ def check_proposal_against_floors(
     if proposal.operation in (AmendmentOperation.REPLACE, AmendmentOperation.REMOVE):
         if proposal.target_provision:
             # Look up the provision by id.
-            matching = next(
-                (p for p in dim.provisions if p.id == proposal.target_provision), None
-            )
+            matching = next((p for p in dim.provisions if p.id == proposal.target_provision), None)
             if matching and matching.kind == ProvisionKind.EVIDENTIAL_FUNDAMENTAL:
                 raise FloorProtectionError(
                     f"Provision '{proposal.target_provision}' is an evidential fundamental"
@@ -133,9 +126,7 @@ def check_proposal_conflicts(
     if dim is None:
         return None
 
-    provision_lines = "\n".join(
-        f"- [{p.kind}] id={p.id}: {p.text}" for p in dim.provisions
-    )
+    provision_lines = "\n".join(f"- [{p.kind}] id={p.id}: {p.text}" for p in dim.provisions)
 
     prompt = (
         "You are reviewing a proposed amendment to a minutes profile dimension.\n"
@@ -150,7 +141,8 @@ def check_proposal_conflicts(
         f"  Proposed text: {proposal.proposed_text or 'N/A (remove)'}\n"
         "\n"
         "Does this proposal CONTRADICT or DUPLICATE any existing provision in this dimension?\n"
-        'Reply with has_conflict: true/false, conflict_type ("contradiction" or "duplicate" or null),'
+        'Reply with has_conflict: '
+        'true/false, conflict_type ("contradiction" or "duplicate" or null),'
         " and a brief warning explaining the conflict (or null if none)."
     )
 
@@ -236,17 +228,13 @@ def create_amendment_set(
 
 def get_amendment_set(db: Session, set_id: uuid.UUID) -> ProfileAmendmentSet:
     """Return the amendment set with the given id, or raise AmendmentSetNotFoundError."""
-    amendment_set = db.scalar(
-        select(ProfileAmendmentSet).where(ProfileAmendmentSet.id == set_id)
-    )
+    amendment_set = db.scalar(select(ProfileAmendmentSet).where(ProfileAmendmentSet.id == set_id))
     if amendment_set is None:
         raise AmendmentSetNotFoundError(f"Amendment set '{set_id}' not found.")
     return amendment_set
 
 
-def list_amendment_sets(
-    db: Session, profile_version_id: uuid.UUID
-) -> list[ProfileAmendmentSet]:
+def list_amendment_sets(db: Session, profile_version_id: uuid.UUID) -> list[ProfileAmendmentSet]:
     """Return all amendment sets for a profile version, newest first."""
     return list(
         db.scalars(
