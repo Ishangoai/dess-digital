@@ -94,7 +94,7 @@ ROUTES: dict[EditCause, Route] = {
     EditCause.PROFILE_SILENT_OR_DIFFERENT: Route.CANDIDATE_RULE,
 }
 
-Rule = Literal["formatting_only", "date_format", "name_to_role"]
+Rule = Literal["formatting_only", "date_format", "figure_corrected", "name_to_role"]
 
 
 class ClassifiedChange(BaseModel):
@@ -249,6 +249,17 @@ def classify_by_rule(
             f"Dates were rewritten in {after} style, which differs from the profile's {wanted}.",
         )
 
+    if figure_corrected(change.original, change.edited):
+        return _settled(
+            change,
+            profile,
+            DimensionCode.MP2,
+            EditCause.EVIDENCE_MISREAD,
+            "figure_corrected",
+            "A figure in the draft was corrected.",
+            kind=EditKind.FACTUAL_CORRECTION,
+        )
+
     if name_replaced_by_role(change.original, change.edited, people):
         basis = _collective_attribution_text(profile)
         if basis:
@@ -280,12 +291,13 @@ def _settled(
     rule: Rule,
     reason: str,
     profile_text: str | None = None,
+    kind: EditKind = EditKind.WORDING_OR_STYLE,
 ) -> ClassifiedChange:
     return ClassifiedChange(
         change_id=change.change_id,
         section=change.section,
         paragraph_id=change.paragraph_id,
-        kind=EditKind.WORDING_OR_STYLE,
+        kind=kind,
         dimension=dimension,
         dimension_title=dimension_title(profile, dimension),
         cause=cause,
@@ -368,6 +380,29 @@ def date_format_change(original: str, edited: str) -> tuple[str, str] | None:
     if a_styles == b_styles:
         return None
     return a_styles[0], b_styles[-1]
+
+
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def _numbers(words: Iterable[str]) -> set[str]:
+    return {n.replace(",", "") for w in words for n in _NUMBER.findall(w)}
+
+
+def figure_corrected(original: str, edited: str) -> bool:
+    """Wording with a figure was taken out and a figure the draft did not contain put in.
+
+    Figures that only move, or new figures added without taking any out, do not count.
+    """
+    a, b = original.split(), edited.split()
+    removed: set[str] = set()
+    added: set[str] = set()
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed |= _numbers(a[i1:i2])
+        if tag in ("replace", "insert"):
+            added |= _numbers(b[j1:j2])
+    return bool(removed) and bool(added - _numbers(a))
 
 
 _TITLES = {"mr", "mrs", "ms", "miss", "dr", "prof", "professor", "sir", "dame", "lord", "lady"}

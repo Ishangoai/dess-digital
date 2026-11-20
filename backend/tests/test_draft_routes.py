@@ -14,8 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.db import get_db
 from app.llm import LLMClient, LLMProviderError
-from app.minutes.profile_content import ProfileContent
+from app.minutes.edit_review import EditCause
+from app.minutes.profile_content import DimensionCode, ProfileContent
 from app.models.draft import DraftRun, ExportedDocument
+from app.models.profile import VersionOrigin
 from app.routers import draft as draft_routes
 from app.services import profile as profile_svc
 from tests import minutes_samples as samples
@@ -27,7 +29,11 @@ FIXTURES = Path(__file__).parent / "fixtures" / "minutes"
 @pytest.fixture
 def provider() -> ScriptedProvider:
     return ScriptedProvider(
-        {**samples.all_stage_outputs(), "EditReview": samples.fake_edit_review()}
+        {
+            **samples.all_stage_outputs(),
+            "EditReview": samples.fake_edit_review(),
+            "AmendmentDraft": samples.fake_amendment(),
+        }
     )
 
 
@@ -464,3 +470,163 @@ def test_upload_without_an_llm_only_compares(
     body = _upload(client, run_id, _edited(original)).json()
     assert body["classification_status"] is None
     assert "EditReview" not in provider.schemas_called()
+
+
+# rule changes learned from the edits
+
+
+def _uploaded(client: TestClient) -> tuple[str, dict]:
+    run_id = create(client, auto_confirm_mapping="true")["id"]
+    original = client.get(f"/api/drafts/{run_id}/document.docx").content
+    _upload(client, run_id, _edited(original))
+    return run_id, client.get(f"/api/drafts/{run_id}/edited-document").json()
+
+
+def _decide(client: TestClient, run_id: str, proposal: dict, **body: str):
+    return client.patch(f"/api/drafts/{run_id}/amendments/{proposal['id']}", json=body)
+
+
+def test_rule_changes_are_proposed_after_the_edits_are_explained(client: TestClient) -> None:
+    run_id, body = _uploaded(client)
+
+    found = body["amendments"]
+    assert (found["status"], found["base_version"], found["applied_version"]) == (
+        "completed",
+        1,
+        None,
+    )
+    [proposal] = found["proposals"]
+    assert (proposal["dimension"], proposal["operation"], proposal["status"]) == (
+        "WS5",
+        "add",
+        "proposed",
+    )
+    assert proposal["text"] == "Record the Board's thanks where it gives them."
+    assert proposal["refused"] is None
+
+    calls = client.get(f"/api/drafts/{run_id}/calls").json()
+    assert [c["stage"] for c in calls].count("amendment") == 1
+    assert "<edits>\nC" in calls[-1]["prompt"] and "Why: Invented reason." in calls[-1]["prompt"]
+
+
+def test_accepted_change_becomes_the_active_profile_version(
+    client: TestClient, db: Session, profile_content: ProfileContent
+) -> None:
+    run_id, body = _uploaded(client)
+    [proposal] = body["amendments"]["proposals"]
+
+    decided = _decide(client, run_id, proposal, status="accepted", by="Company Secretary")
+    assert decided.status_code == 200 and decided.json()["status"] == "accepted"
+    applied = client.post(f"/api/drafts/{run_id}/amendments/apply", json={"by": "Secretary"})
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["amendments"]["applied_version"] == 2
+
+    db.expire_all()
+    profile = profile_svc.get_profile(db, "dess-standard")
+    v1, v2 = profile.versions
+    assert profile_svc.active_version(profile) is v2
+    assert (v2.origin, v2.parent_version_id, v2.confirmed_by) == (
+        VersionOrigin.FEEDBACK,
+        v1.id,
+        "Secretary",
+    )
+    ws5 = next(d for d in profile_svc.version_content(v2).writing_style if d.code == "WS5")
+    assert [p.text for p in ws5.provisions] == ["Record the Board's thanks where it gives them."]
+    assert "WS5: added a rule." in (v2.change_summary or "")
+    assert profile_svc.version_content(v1) == profile_content  # the parent is never modified
+
+    assert _decide(client, run_id, proposal, status="rejected").status_code == 409
+    assert client.post(f"/api/drafts/{run_id}/amendments/apply").status_code == 409
+    assert client.post(f"/api/drafts/{run_id}/edited-document/classify").status_code == 409
+
+
+def test_reworded_change_is_applied_as_reworded(client: TestClient, db: Session) -> None:
+    run_id, body = _uploaded(client)
+    [proposal] = body["amendments"]["proposals"]
+
+    reworded = _decide(client, run_id, proposal, text="  Note thanks to staff.  ").json()
+    assert (reworded["text"], reworded["proposed_text"]) == (
+        "Note thanks to staff.",
+        "Record the Board's thanks where it gives them.",
+    )
+    assert _decide(client, run_id, proposal, text=" ").status_code == 422
+    _decide(client, run_id, proposal, status="accepted")
+    assert client.post(f"/api/drafts/{run_id}/amendments/apply").status_code == 200
+
+    db.expire_all()
+    v2 = profile_svc.get_profile(db, "dess-standard").versions[-1]
+    ws5 = next(d for d in profile_svc.version_content(v2).writing_style if d.code == "WS5")
+    assert [p.text for p in ws5.provisions] == ["Note thanks to staff."]
+
+
+def test_rejected_changes_are_not_applied(client: TestClient, db: Session) -> None:
+    run_id, body = _uploaded(client)
+    [proposal] = body["amendments"]["proposals"]
+
+    assert _decide(client, run_id, proposal, status="rejected").json()["status"] == "rejected"
+    response = client.post(f"/api/drafts/{run_id}/amendments/apply")
+    assert response.status_code == 409 and "accept at least one" in response.text
+    db.expire_all()
+    assert len(profile_svc.get_profile(db, "dess-standard").versions) == 1
+
+
+def test_change_to_a_fixed_rule_is_refused(client: TestClient, provider: ScriptedProvider) -> None:
+    provider.responses["EditReview"] = samples.fake_edit_review(dimension=DimensionCode.MP4)
+    provider.responses["AmendmentDraft"] = samples.fake_amendment(
+        operation="replace", target_rule_id="mp4-no-silent-approval"
+    )
+    run_id, body = _uploaded(client)
+
+    [proposal] = body["amendments"]["proposals"]
+    assert "fixed rule" in proposal["refused"]
+    assert proposal["current_text"]  # the fixed rule it tried to replace
+    assert _decide(client, run_id, proposal, status="accepted").status_code == 409
+
+
+def test_conflict_with_an_existing_rule_is_flagged(
+    client: TestClient, provider: ScriptedProvider
+) -> None:
+    provider.responses["EditReview"] = samples.fake_edit_review(dimension=DimensionCode.WS4)
+    provider.responses["AmendmentDraft"] = samples.fake_amendment(
+        operation="replace",
+        target_rule_id="ws4-names-for-actions",
+        overlap="conflict",
+        overlap_with="ws4-names-for-actions",
+    )
+    _, body = _uploaded(client)
+
+    [proposal] = body["amendments"]["proposals"]
+    assert (proposal["overlap"], proposal["overlap_with"], proposal["refused"]) == (
+        "conflict",
+        "ws4-names-for-actions",
+        None,
+    )
+    assert proposal["current_text"]
+
+
+def test_failed_proposals_are_retried_on_their_own(
+    client: TestClient, provider: ScriptedProvider
+) -> None:
+    provider.responses["AmendmentDraft"] = LLMProviderError("model unavailable")
+    run_id, body = _uploaded(client)
+    assert body["classification_status"] == "completed"
+    assert body["amendments"]["status"] == "failed"
+    assert "model unavailable" in body["amendments"]["error"]
+
+    provider.responses["AmendmentDraft"] = samples.fake_amendment()
+    explained = provider.schemas_called().count("EditReview")
+    assert client.post(f"/api/drafts/{run_id}/edited-document/classify").status_code == 202
+    retried = client.get(f"/api/drafts/{run_id}/edited-document").json()
+    assert retried["amendments"]["status"] == "completed"
+    assert len(retried["amendments"]["proposals"]) == 1
+    assert provider.schemas_called().count("EditReview") == explained
+
+
+def test_no_candidate_rules_means_no_proposals(
+    client: TestClient, provider: ScriptedProvider
+) -> None:
+    provider.responses["EditReview"] = samples.fake_edit_review(cause=EditCause.PROFILE_NOT_APPLIED)
+    _, body = _uploaded(client)
+    assert body["amendments"]["status"] == "completed"
+    assert body["amendments"]["proposals"] == []
+    assert "AmendmentDraft" not in provider.schemas_called()

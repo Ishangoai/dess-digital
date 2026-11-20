@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from app.minutes.amendments import AmendmentDraft
 from app.minutes.edit_review import EditReview
 from app.minutes.llm_schemas import (
     DraftMinutes,
@@ -21,6 +22,7 @@ STAGE_SCHEMAS = [
     ValidationReport,
     Reconsideration,
     EditReview,
+    AmendmentDraft,
 ]
 
 

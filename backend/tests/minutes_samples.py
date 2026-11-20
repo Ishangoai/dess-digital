@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable
 
 from app.llm.types import CompletionRequest
+from app.minutes.amendments import AmendmentDraft
 from app.minutes.edit_review import (
     EditCause,
     EditClassification,
@@ -303,3 +304,17 @@ def fake_edit_review(
         )
 
     return respond
+
+
+def fake_amendment(**values: object) -> AmendmentDraft:
+    """A proposal writer that adds the same invented rule for every pattern."""
+    base = {
+        "operation": "add",
+        "target_rule_id": None,
+        "text": "Record the Board's thanks where it gives them.",
+        "kind": "preference",
+        "overlap": "none",
+        "overlap_with": None,
+        "reason": "Invented reason.",
+    }
+    return AmendmentDraft.model_validate({**base, **values})

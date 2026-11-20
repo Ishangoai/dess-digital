@@ -3,18 +3,15 @@
 	import { invalidate } from '$app/navigation';
 	import {
 		api,
-		EDIT_CAUSE_LABELS,
-		EDIT_KIND_LABELS,
-		EDIT_ROUTES,
 		errorText,
-		formatDay,
-		lineRef,
 		plural,
+		type AmendmentProposal,
 		type ChangeStatus,
 		type CommentThread,
 		type DiffSegment,
 		type EditRoute,
-		type ParagraphChange
+		type ParagraphChange,
+		type ProposalStatus
 	} from '#lib/api.ts';
 	import FileDrop from '#lib/components/FileDrop.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -29,48 +26,71 @@
 	let uploading = $state(false);
 	let uploadError = $state('');
 	let showUnchanged = $state(false);
-	let replaceInput = $state<HTMLInputElement>();
+	let allOpen = $state(false);
+	let openItems = $state<Record<string, boolean>>({});
+	let requesting = $state(false);
+	let actionError = $state('');
+	let busy = $state<string | null>(null);
+	let applying = $state(false);
+	let editing = $state<string | null>(null);
+	let wording = $state('');
 
-	const LABELS: Record<ChangeStatus, string> = {
-		changed: 'Changed',
-		added: 'Added',
-		removed: 'Removed',
-		moved: 'Moved',
-		unchanged: 'Unchanged'
+	const EDITS: ChangeStatus[] = ['changed', 'added', 'removed', 'moved'];
+	const ROUTE_LABEL: Record<EditRoute, string> = {
+		candidate_rule: 'Possible rule change',
+		draft_mistake: 'Draft mistake',
+		meeting_only: 'This meeting only'
 	};
-	const ORDER: ChangeStatus[] = ['changed', 'added', 'removed', 'moved', 'unchanged'];
+
+	const editCount = (counts: Partial<Record<ChangeStatus, number>> | undefined) =>
+		EDITS.reduce((n, s) => n + (counts?.[s] ?? 0), 0);
 
 	const questions = $derived(new Map((run.draft?.questions ?? []).map((q, i) => [q.question_id, { n: i + 1, text: q.question }])));
 	const threads = $derived(new Map((comparison?.comments ?? []).map((t) => [t.comment_id, t])));
 	const headings = $derived(new Map((comparison?.sections ?? []).map((s) => [s.section, s.heading])));
-	const answered = $derived((comparison?.comments ?? []).filter((t) => t.question_id && t.replies.length));
-	const otherComments = $derived((comparison?.comments ?? []).filter((t) => !t.question_id));
-	const edits = $derived(ORDER.slice(0, 4).reduce((n, s) => n + (comparison?.counts[s] ?? 0), 0));
+	const comments = $derived((comparison?.comments ?? []).filter((t) => !t.question_id || t.replies.length));
+	const edits = $derived(editCount(comparison?.counts));
 	const sections = $derived(
-		(comparison?.sections ?? [])
-			.map((s) => ({ ...s, shown: s.changes.filter((c) => showUnchanged || c.status !== 'unchanged') }))
-			.filter((s) => s.shown.length)
+		(comparison?.sections ?? []).map((s) => ({
+			...s,
+			edits: editCount(s.counts),
+			shown: s.changes.filter((c) => showUnchanged || c.status !== 'unchanged')
+		}))
 	);
 
 	const classification = $derived(edited?.classification ?? null);
 	const status = $derived(edited?.classification_status ?? null);
 	const explaining = $derived(status === 'pending' || status === 'running');
 	const labels = $derived(new Map((classification?.changes ?? []).map((c) => [c.change_id, c])));
-	const ROUTE_ORDER: EditRoute[] = ['candidate_rule', 'draft_mistake', 'meeting_only'];
-	const groups = $derived(
-		ROUTE_ORDER.map((route) => ({
-			route,
-			patterns: (classification?.patterns ?? []).filter((p) => p.route === route)
-		})).filter((g) => g.patterns.length)
-	);
-	let requesting = $state(false);
+	const set = $derived(edited?.amendments ?? null);
+	const writing = $derived(!explaining && (set?.status === 'pending' || set?.status === 'running'));
+	const working = $derived(explaining || writing);
+	const applied = $derived(set?.applied_version != null);
+	const proposals = $derived(set?.status === 'completed' ? set.proposals : []);
+	const acceptedCount = $derived(proposals.filter((p) => p.status === 'accepted').length);
+	const OUTCOME: Record<ProposalStatus, string> = {
+		accepted: 'Added',
+		rejected: 'Rejected',
+		deferred: 'Not added',
+		proposed: 'Not added'
+	};
+	const pills = $derived.by(() => {
+		if (!classification) return [];
+		const n = (route: EditRoute) => classification.changes.filter((c) => c.route === route).length;
+		return [
+			{ count: n('candidate_rule'), label: n('candidate_rule') === 1 ? 'suggests a rule change' : 'suggest rule changes', tone: 'rule' },
+			{ count: n('draft_mistake'), label: n('draft_mistake') === 1 ? 'draft mistake' : 'draft mistakes', tone: 'mistake' },
+			{ count: n('meeting_only'), label: 'this meeting only', tone: '' },
+			{ count: classification.unclassified.length, label: 'not read', tone: '' }
+		].filter((p) => p.count);
+	});
 
 	onMount(() => {
 		// The edits are explained in the background; refresh until that settles.
 		const timer = window.setInterval(async () => {
-			if (!explaining) return;
+			if (!working) return;
 			await invalidate('app:edits');
-			if (!explaining) await invalidate('app:run');
+			if (!working) await invalidate('app:run');
 		}, 3000);
 		return () => window.clearInterval(timer);
 	});
@@ -88,11 +108,49 @@
 		}
 	}
 
-	async function jump(changeId: string) {
-		const target = comparison?.sections.flatMap((s) => s.changes).find((c) => c.change_id === changeId);
-		if (target?.status === 'unchanged') showUnchanged = true;
+	const decidable = (p: AmendmentProposal) => !applied && !p.refused && p.overlap !== 'duplicate';
+
+	async function act(id: string, work: () => Promise<unknown>) {
+		busy = id;
+		actionError = '';
+		try {
+			await work();
+			await invalidate('app:edits');
+		} catch (e) {
+			actionError = errorText(e);
+		} finally {
+			busy = null;
+		}
+	}
+
+	function decide(p: AmendmentProposal, choice: ProposalStatus) {
+		const next = p.status === choice ? 'proposed' : choice;
+		return act(p.id, () => api.updateAmendment(run.id, p.id, { status: next }));
+	}
+
+	async function saveWording(p: AmendmentProposal) {
+		await act(p.id, () => api.updateAmendment(run.id, p.id, { text: wording }));
+		if (!actionError) editing = null;
+	}
+
+	async function applyAll() {
+		applying = true;
+		await act('apply', () => api.applyAmendments(run.id));
+		applying = false;
+	}
+
+	async function jump(changeIds: string[]) {
+		const wanted = new Set(changeIds);
+		allOpen = true;
+		for (const s of comparison?.sections ?? []) {
+			for (const c of s.changes) {
+				if (!wanted.has(c.change_id)) continue;
+				openItems[s.section] = true;
+				if (c.status === 'unchanged') showUnchanged = true;
+			}
+		}
 		await tick();
-		document.getElementById(`change-${changeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		document.getElementById(`change-${changeIds[0]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 	}
 
 	async function upload(file: File | undefined) {
@@ -107,32 +165,19 @@
 			uploadError = errorText(e);
 		} finally {
 			uploading = false;
-			if (replaceInput) replaceInput.value = '';
 		}
 	}
 
-	function trackedSummary(c: ParagraphChange): string {
-		const counts = new Map<string, number>();
-		for (const t of c.tracked_changes) counts.set(t.kind, (counts.get(t.kind) ?? 0) + 1);
-		const words: Record<string, string> = {
-			insertion: 'insertion',
-			deletion: 'deletion',
-			move_from: 'move',
-			move_to: 'move',
-			formatting: 'formatting change'
-		};
-		const authors = [...new Set(c.tracked_changes.map((t) => t.author).filter(Boolean))];
-		const parts = [...counts].map(([k, n]) => plural(n, words[k]));
-		return `Tracked: ${parts.join(', ')}${authors.length ? ` by ${authors.join(', ')}` : ''}`;
-	}
-
-	function movedNote(c: ParagraphChange): string {
-		if (!c.from_section) return 'Moved within this item';
-		return `Moved from ${headings.get(c.from_section) ?? `item ${c.from_section}`}`;
-	}
-
-	function side(diff: DiffSegment[], keep: 'insert' | 'delete'): DiffSegment[] {
-		return diff.filter((d) => d.op === 'equal' || d.op === keep);
+	function note(c: ParagraphChange): string {
+		const parts: string[] = [];
+		if (c.heading) parts.push('Heading');
+		if (c.status === 'added') parts.push('New paragraph');
+		if (c.status === 'removed') parts.push('Removed');
+		if (c.status === 'moved') {
+			parts.push(c.from_section ? `Moved from ${headings.get(c.from_section) ?? `item ${c.from_section}`}` : 'Moved within this item');
+		}
+		if (c.format_only) parts.push('Only the formatting changed');
+		return parts.join(', ');
 	}
 </script>
 
@@ -146,7 +191,6 @@
 		<p class="tiny muted">
 			<Icon name="message" size={12} />
 			{#if q}Question {q.n}{:else}Comment from {t.author ?? 'unknown'}{/if}
-			{#if t.resolved}<span class="chip tiny">Resolved</span>{/if}
 		</p>
 		<p class="small">{q ? q.text : t.text}</p>
 		{#each t.replies as r (r.comment_id)}
@@ -160,8 +204,8 @@
 		<div class="stack tight">
 			<h2>Upload the edited minutes</h2>
 			<p class="small muted">
-				Download the draft from the Minutes step, edit it in Word as you normally would (with Track
-				Changes on or off) and upload the file here. You will see what changed, item by item.
+				Download the draft from the Minutes step, edit it in Word as you normally would and upload
+				the file here.
 			</p>
 		</div>
 		<FileDrop label="Edited minutes" description="Drop the .docx here or" accept=".docx" bind:files disabled={uploading} />
@@ -169,189 +213,170 @@
 		<div class="row">
 			<button class="btn primary" onclick={() => upload(files[0])} disabled={!files.length || uploading}>
 				{#if uploading}<span class="spinner"></span>{:else}<Icon name="upload" size={14} />{/if}
-				Compare with the draft
+				Upload
 			</button>
 			<a class="btn ghost" href="/drafts/{run.id}/minutes">Back to the minutes</a>
 		</div>
 	</section>
 {:else if comparison}
 	<section class="card summary">
-		<div class="row">
-			<div class="stack tight grow">
-				<h2>{edits ? `${plural(edits, 'edit')} to the draft` : 'No changes to the wording'}</h2>
-				<p class="tiny muted">
-					{edited.filename}, uploaded {formatDay(edited.uploaded_at)}. Compared with the draft
-					downloaded {formatDay(edited.exported_at)}{edited.export_used_template ? ' (with your template)' : ''}.
-				</p>
-			</div>
-			<button class="btn sm" onclick={() => replaceInput?.click()} disabled={uploading}>
-				{#if uploading}<span class="spinner"></span>{:else}<Icon name="upload" size={14} />{/if}
-				Upload a newer version
-			</button>
-			<input bind:this={replaceInput} type="file" accept=".docx" hidden onchange={(e) => upload(e.currentTarget.files?.[0])} />
-		</div>
 		<div class="row tight">
-			{#each ORDER as s (s)}
-				{#if comparison.counts[s]}
-					<span class="chip status-{s}">{comparison.counts[s]} {LABELS[s].toLowerCase()}</span>
-				{/if}
-			{/each}
-			<span class="spacer"></span>
-			<label class="small toggle">
-				<input type="checkbox" bind:checked={showUnchanged} /> Show unchanged paragraphs
-			</label>
+			<span class="chip">{edits ? plural(edits, 'edit') : 'No edits'}</span>
+			{#each pills as p (p.label)}<span class="chip {p.tone}">{p.count} {p.label}</span>{/each}
 		</div>
-		{#if comparison.bookmarks_expected && comparison.bookmarks_found === 0}
-			<p class="alert info small">
-				This file has no paragraph markers (it was probably downloaded before they were added), so
-				paragraphs were matched by their wording.
-			</p>
-		{:else if comparison.bookmarks_found < comparison.bookmarks_expected}
-			<p class="tiny muted">
-				{comparison.bookmarks_found} of {comparison.bookmarks_expected} paragraphs kept their marker; the
-				rest were matched by wording.
-			</p>
-		{/if}
-		{#if uploadError}<p class="alert error small">{uploadError}</p>{/if}
-	</section>
 
-	<section class="card stack tight">
-		<div class="row">
-			<h3 class="grow">What the edits mean</h3>
-			{#if !explaining && (status === null || status === 'failed')}
+		{#if working}
+			<p class="small muted row tight">
+				<span class="spinner"></span>
+				{explaining ? 'Reading your edits against the Minutes Profile.' : 'Writing the rule changes.'}
+			</p>
+		{:else if edits && !applied && (status !== 'completed' || !set || set.status === 'failed')}
+			<div class="row tight">
+				<p class="small muted grow" title={edited.classification_error ?? set?.error ?? ''}>
+					{status === 'failed'
+						? 'Some edits could not be read.'
+						: set?.status === 'failed'
+							? 'The rule changes could not be written.'
+							: 'Find out which edits should change your rules.'}
+				</p>
 				<button class="btn sm" onclick={explain} disabled={requesting}>
 					{#if requesting}<span class="spinner"></span>{:else}<Icon name="refresh" size={14} />{/if}
-					{status === null ? 'Explain the edits' : 'Try again'}
+					{status === 'failed' || set?.status === 'failed' ? 'Try again' : 'Read the edits'}
 				</button>
-			{/if}
-		</div>
-		{#if explaining}
-			<p class="small muted row tight">
-				<span class="spinner"></span> Explaining each edit against the Minutes Profile, one agenda item at a time.
-			</p>
-		{:else if status === null}
-			<p class="small muted">The edits have not been explained yet.</p>
+			</div>
 		{/if}
-		{#if status === 'failed' && edited.classification_error}
-			<p class="alert error small">Some items could not be explained. {edited.classification_error}</p>
-		{/if}
-		{#if status === 'completed' && !groups.length}
-			<p class="small muted">There were no edits to explain.</p>
-		{/if}
-		{#each groups as g (g.route)}
-			<div class="route">
-				<div class="route-head">
-					<span class="eyebrow route-{g.route}">{EDIT_ROUTES[g.route].title}</span>
-					<p class="tiny muted">{EDIT_ROUTES[g.route].hint}</p>
-				</div>
-				<ul class="patterns">
-					{#each g.patterns as p (p.pattern_id)}
-						<li>
-							<div class="row tight">
-								<span class="chip">{p.dimension} {p.dimension_title}</span>
-								<span class="small">{EDIT_KIND_LABELS[p.kind]}</span>
-								{#if p.count > 1}<span class="chip times">{p.count} times</span>{/if}
+		{#if uploadError || actionError}<p class="alert error small">{uploadError || actionError}</p>{/if}
+
+		{#if proposals.length}
+			<div class="stack">
+				<h2>Rule changes</h2>
+				<ul class="rules">
+					{#each proposals as p (p.id)}
+						{@const quiet = !!p.refused || p.overlap === 'duplicate' || p.status === 'rejected'}
+						{@const why = labels.get(p.change_ids[0])?.reason}
+						<li class:quiet class:accepted={p.status === 'accepted'}>
+							<div class="rule-head">
+								<strong class="grow">{p.dimension_title}</strong>
+								{#if p.refused}
+									<span class="tag" title={p.refused}>Fixed rule</span>
+								{:else if p.overlap === 'duplicate'}
+									<span class="tag">Already a rule</span>
+								{:else if applied}
+									<span class="tag" class:on={p.status === 'accepted'}>{OUTCOME[p.status]}</span>
+								{:else}
+									<div class="choice" role="group" aria-label="Decision">
+										<button class:on={p.status === 'accepted'} disabled={busy !== null} onclick={() => decide(p, 'accepted')}>
+											<Icon name="check" size={13} /> Accept
+										</button>
+										<button class:on={p.status === 'rejected'} disabled={busy !== null} onclick={() => decide(p, 'rejected')}>
+											<Icon name="x" size={13} /> Reject
+										</button>
+									</div>
+								{/if}
 							</div>
-							{#each p.reasons.slice(0, 3) as reason, i (i)}<p class="small">{reason}</p>{/each}
-							{#if p.reasons.length > 3}<p class="tiny muted">and {p.reasons.length - 3} more</p>{/if}
-							<p class="tiny refs">
-								{#each p.change_ids as id, i (id)}
-									<button class="link-btn tiny" onclick={() => jump(id)}>{p.paragraph_ids[i]}</button>
-								{/each}
+							{#if why}<p class="small muted">{why}</p>{/if}
+							{#if !p.refused && p.overlap !== 'duplicate'}
+								{#if editing === p.id}
+									<textarea class="wording" rows="3" bind:value={wording}></textarea>
+									<div class="row tight">
+										<button class="btn sm primary" disabled={busy !== null || !wording.trim()} onclick={() => saveWording(p)}>Save</button>
+										<button class="btn sm ghost" onclick={() => (editing = null)}>Cancel</button>
+									</div>
+								{:else if p.operation === 'remove'}
+									<p class="small"><del>{p.current_text}</del></p>
+								{:else}
+									{#if p.operation === 'replace' && p.current_text}<p class="small muted"><del>{p.current_text}</del></p>{/if}
+									<p class="small">{p.text}</p>
+								{/if}
+							{/if}
+							<p class="links">
+								<button class="link-btn tiny" onclick={() => jump(p.change_ids)}>
+									{p.change_ids.length > 1 ? `See the ${p.change_ids.length} edits` : 'See the edit'}
+								</button>
+								{#if decidable(p) && p.operation !== 'remove' && editing !== p.id}
+									<button class="link-btn tiny" onclick={() => ((editing = p.id), (wording = p.text ?? ''))}>Change the wording</button>
+								{/if}
 							</p>
 						</li>
 					{/each}
 				</ul>
+				{#if applied}
+					<div class="alert ok done">
+						<Icon name="check" size={16} />
+						<span class="grow">Profile updated. New meetings will use v{set?.applied_version}.</span>
+						<a class="btn primary" href="/profiles/{set?.profile_slug}">View the profile</a>
+					</div>
+				{:else}
+					<div class="row end">
+						<button class="btn primary" disabled={!acceptedCount || applying || busy !== null} onclick={applyAll}>
+							{#if applying}<span class="spinner"></span>{/if}
+							Update the profile
+						</button>
+					</div>
+				{/if}
 			</div>
-		{/each}
-		{#if classification?.unclassified.length}
-			<p class="tiny muted">{plural(classification.unclassified.length, 'edit')} could not be explained.</p>
+		{:else if set?.status === 'completed'}
+			<p class="small muted">Your edits do not suggest any rule changes.</p>
 		{/if}
 	</section>
 
-	{#if answered.length || otherComments.length}
-		<section class="card stack tight">
-			<h3>Comments in the edited file</h3>
-			{#each [...answered, ...otherComments] as t (t.comment_id)}{@render thread(t)}{/each}
-		</section>
-	{/if}
-
-	{#if !sections.length}
-		<p class="card small muted">Every paragraph matches the draft.</p>
-	{/if}
-
-	{#each sections as s (s.section)}
-		<section class="item">
-			<header class="item-head">
-				<h2>{s.heading}</h2>
-				<span class="tiny muted">
-					{ORDER.filter((k) => k !== 'unchanged' && s.counts[k]).map((k) => `${s.counts[k]} ${LABELS[k].toLowerCase()}`).join(', ') || 'no changes'}
-				</span>
-			</header>
-			{#each s.shown as c, i (i)}
-				{@const k = labels.get(c.change_id)}
-				<article class="change status-{c.status}" id="change-{c.change_id}">
-					<div class="change-meta row tight">
-						<span class="chip status-{c.status}">{c.heading ? `Heading ${LABELS[c.status].toLowerCase()}` : LABELS[c.status]}</span>
-						{#if c.status === 'moved'}<span class="tiny muted">{movedNote(c)}{c.text_changed ? ', and reworded' : ''}</span>{/if}
-						{#if c.format_only}<span class="tiny muted">Only spacing or formatting changed</span>{/if}
-						{#if c.matched_by === 'text' && c.status !== 'added' && c.status !== 'removed'}
-							<span class="tiny muted" title="Similarity {Math.round((c.similarity ?? 0) * 100)}%">Matched by wording</span>
-						{/if}
-					</div>
-					{#if c.status === 'unchanged'}
-						<p class="minute muted">{c.edited}</p>
-					{:else}
-						<div class="sides">
-							<div class="side">
-								<span class="eyebrow">Draft</span>
-								{#if c.original === null}
-									<p class="small muted">Not in the draft</p>
-								{:else if c.status === 'removed'}
-									<p class="minute"><del>{c.original}</del></p>
-								{:else}
-									<p class="minute">{@render text(side(c.diff, 'delete'))}</p>
-								{/if}
-							</div>
-							<div class="side">
-								<span class="eyebrow">Edited</span>
-								{#if c.edited === null}
-									<p class="small muted">Removed</p>
-								{:else if c.status === 'added'}
-									<p class="minute"><ins>{c.edited}</ins></p>
-								{:else}
-									<p class="minute">{@render text(side(c.diff, 'insert'))}</p>
-								{/if}
-							</div>
-						</div>
-					{/if}
-					{#if k}
-						<div class="explain">
-							<div class="row tight">
-								<span class="chip route-{k.route}">{EDIT_CAUSE_LABELS[k.cause]}</span>
-								<span class="chip">{k.dimension} {k.dimension_title}</span>
-								<span class="tiny muted">{EDIT_KIND_LABELS[k.kind]}{k.decided_by === 'rule' ? ', settled by rule' : ''}</span>
-							</div>
-							<p class="small">{k.reason}</p>
-							{#if k.profile_text}<p class="tiny muted">Profile: "{k.profile_text}"</p>{/if}
-							{#if k.kind === 'content_added'}
-								<p class="tiny muted">
-									{k.support === 'transcript'
-										? `Supported by the evidence at ${k.support_refs.map(lineRef).join(', ') || 'the item'}`
-										: "Not in the evidence: from the professional's own knowledge"}
+	<details class="panel" bind:open={allOpen}>
+		<summary class="panel-head">
+			<h3>All changes, item by item</h3>
+			<span class="count">{plural(edits, 'edit')}</span>
+			<Icon name="chevronDown" size={14} />
+		</summary>
+		<div class="panel-body">
+			<label class="small toggle">
+				<input type="checkbox" bind:checked={showUnchanged} /> Show unchanged paragraphs
+			</label>
+			{#each sections as s (s.section)}
+				<details class="item" bind:open={openItems[s.section]}>
+					<summary>
+						<Icon name="chevronRight" size={14} />
+						<span class="grow">{s.heading}</span>
+						<span class="count">{s.edits ? plural(s.edits, 'edit') : 'No edits'}</span>
+					</summary>
+					<div class="item-body">
+						{#each s.shown as c, i (i)}
+							{@const k = labels.get(c.change_id)}
+							{@const n = note(c)}
+							<article class="change status-{c.status}" id="change-{c.change_id}">
+								{#if n}<p class="tiny muted">{n}</p>{/if}
+								<p class="minute" class:muted={c.status === 'unchanged'}>
+									{#if c.status === 'added'}<ins>{c.edited}</ins>
+									{:else if c.status === 'removed'}<del>{c.original}</del>
+									{:else if c.status === 'unchanged' || !c.diff.length}{c.edited}
+									{:else}{@render text(c.diff)}{/if}
 								</p>
-							{/if}
-						</div>
-					{/if}
-					{#if c.tracked_changes.length}<p class="tiny muted">{trackedSummary(c)}</p>{/if}
-					{#each c.comment_ids as id (id)}
-						{@const t = threads.get(id)}
-						{#if t && (t.replies.length || !t.question_id)}{@render thread(t)}{/if}
-					{/each}
-				</article>
+								{#if k}
+									<p class="why tiny"><span class="tag route-{k.route}">{ROUTE_LABEL[k.route]}</span> {k.reason}</p>
+								{/if}
+								{#each c.comment_ids as id (id)}
+									{@const t = threads.get(id)}
+									{#if t && (t.replies.length || !t.question_id)}{@render thread(t)}{/if}
+								{/each}
+							</article>
+						{:else}
+							<p class="small muted">No edits in this item.</p>
+						{/each}
+					</div>
+				</details>
 			{/each}
-		</section>
-	{/each}
+			{#if comments.length}
+				<details class="item">
+					<summary>
+						<Icon name="chevronRight" size={14} />
+						<span class="grow">Comments in your file</span>
+						<span class="count">{comments.length}</span>
+					</summary>
+					<div class="item-body">
+						{#each comments as t (t.comment_id)}{@render thread(t)}{/each}
+					</div>
+				</details>
+			{/if}
+		</div>
+	</details>
 {/if}
 
 <style>
@@ -362,19 +387,167 @@
 	.summary {
 		display: flex;
 		flex-direction: column;
-		gap: 0.8rem;
+		gap: 1.1rem;
 	}
 
 	.grow {
 		flex: 1;
-		min-width: 240px;
+		min-width: 0;
 	}
 
 	.row.tight {
 		gap: 0.4rem;
 	}
 
+	.chip.rule {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.chip.mistake {
+		background: var(--warn-bg);
+		color: var(--warn-fg);
+	}
+
+	.rules {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1.1rem;
+	}
+
+	.rules li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding-left: 0.85rem;
+		border-left: 3px solid var(--border-strong);
+	}
+
+	.rules li.accepted {
+		border-left-color: var(--accent);
+	}
+
+	.rules li.quiet {
+		opacity: 0.6;
+	}
+
+	.rule-head {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.wording {
+		width: 100%;
+		font: inherit;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		color: var(--text);
+		resize: vertical;
+	}
+
+	.choice {
+		display: inline-flex;
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+
+	.choice button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.2rem 0.7rem;
+		font: inherit;
+		font-size: 0.8rem;
+		background: var(--surface);
+		color: var(--text-2);
+		border: 0;
+		cursor: pointer;
+	}
+
+	.choice button + button {
+		border-left: 1px solid var(--border-strong);
+	}
+
+	.choice button.on {
+		background: var(--accent);
+		color: var(--surface);
+	}
+
+	.choice button:last-child.on {
+		background: var(--text-2);
+	}
+
+	.choice button:disabled {
+		cursor: default;
+	}
+
+	.links {
+		display: flex;
+		gap: 1rem;
+	}
+
+	.row.end {
+		justify-content: flex-end;
+	}
+
+	.done {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.tag.on {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.panel {
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.panel-head {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.75rem 0.9rem;
+		color: var(--text-2);
+	}
+
+	.panel-head h3 {
+		flex: 1;
+	}
+
+	details.panel[open] > .panel-head :global(svg) {
+		transform: rotate(180deg);
+	}
+
+	.panel-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0 0.9rem 0.9rem;
+	}
+
+	.count {
+		font-size: 0.74rem;
+		color: var(--muted);
+		white-space: nowrap;
+	}
+
 	.toggle {
+		align-self: flex-end;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
@@ -382,30 +555,43 @@
 		cursor: pointer;
 	}
 
-	.item {
-		display: flex;
-		flex-direction: column;
-		gap: 0.6rem;
+	details.item {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
 	}
 
-	.item-head {
+	details.item > summary {
 		display: flex;
-		align-items: baseline;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-		padding-top: 0.5rem;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.6rem 0.75rem;
+		font-size: 0.9rem;
+		font-weight: 500;
+	}
+
+	details.item > summary :global(svg) {
+		flex-shrink: 0;
+		color: var(--muted);
+		transition: transform 0.15s;
+	}
+
+	details.item[open] > summary :global(svg) {
+		transform: rotate(90deg);
+	}
+
+	.item-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.9rem;
+		padding: 0.2rem 0.75rem 0.9rem 2rem;
 	}
 
 	.change {
 		display: flex;
 		flex-direction: column;
-		gap: 0.6rem;
-		padding: 0.9rem 1rem;
-		background: var(--surface);
-		border: 1px solid var(--border);
+		gap: 0.35rem;
+		padding-left: 0.75rem;
 		border-left: 3px solid var(--border-strong);
-		border-radius: var(--radius-sm);
-		box-shadow: var(--shadow-sm);
 	}
 
 	.change.status-changed {
@@ -422,39 +608,6 @@
 
 	.change.status-moved {
 		border-left-color: var(--warn);
-	}
-
-	.chip.status-changed {
-		background: var(--accent-soft);
-		color: var(--accent);
-	}
-
-	.chip.status-added {
-		background: var(--ok-bg);
-		color: var(--ok-fg);
-	}
-
-	.chip.status-removed {
-		background: var(--err-bg);
-		color: var(--err-fg);
-	}
-
-	.chip.status-moved {
-		background: var(--warn-bg);
-		color: var(--warn-fg);
-	}
-
-	.sides {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 1rem;
-	}
-
-	.side {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		min-width: 0;
 	}
 
 	.minute {
@@ -480,71 +633,28 @@
 		padding: 0 0.1rem;
 	}
 
-	.route {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		padding-top: 0.6rem;
-		border-top: 1px solid var(--border);
+	.why {
+		color: var(--text-2);
 	}
 
-	.route-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
+	.tag {
+		display: inline-block;
+		font-size: 0.74rem;
+		margin-right: 0.3rem;
+		padding: 0.05rem 0.45rem;
+		border-radius: 999px;
+		background: var(--surface-2);
+		font-weight: 500;
 	}
 
-	.patterns {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.7rem;
-	}
-
-	.patterns li {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-	}
-
-	.refs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-	}
-
-	.chip.times {
-		background: var(--surface);
-		font-weight: 600;
-	}
-
-	.eyebrow.route-candidate_rule {
-		color: var(--accent);
-	}
-
-	.eyebrow.route-draft_mistake {
-		color: var(--warn-fg);
-	}
-
-	.chip.route-candidate_rule {
+	.tag.route-candidate_rule {
 		background: var(--accent-soft);
 		color: var(--accent);
 	}
 
-	.chip.route-draft_mistake {
+	.tag.route-draft_mistake {
 		background: var(--warn-bg);
 		color: var(--warn-fg);
-	}
-
-	.explain {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-		padding: 0.6rem 0.75rem;
-		background: var(--surface-2);
-		border-radius: var(--radius-sm);
 	}
 
 	.thread {
@@ -565,11 +675,5 @@
 
 	.reply {
 		padding-left: 0.6rem;
-	}
-
-	@media (max-width: 760px) {
-		.sides {
-			grid-template-columns: 1fr;
-		}
 	}
 </style>

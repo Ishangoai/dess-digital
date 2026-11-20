@@ -6,7 +6,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
-from sqlalchemy import Connection, CursorResult, Engine, or_, update
+from pydantic import BaseModel
+from sqlalchemy import CursorResult, or_, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -14,7 +15,7 @@ from app.llm import LLMClient, LLMError, LLMOutputValidationError, LLMResponse
 from app.minutes import edit_review
 from app.minutes.docx_compare import Comparison, compare, read_docx
 from app.minutes.docx_export import IDENTIFIER_PREFIX, ExportManifest, render_minutes
-from app.minutes.edit_review import EditClassificationResult, EditReview, ItemRequest
+from app.minutes.edit_review import EditClassificationResult, EditReview
 from app.minutes.extract import UnsupportedFileError
 from app.minutes.llm_schemas import DraftMinutes, EvidenceMap, PolicySelection
 from app.models.draft import (
@@ -30,7 +31,7 @@ from app.services import profile as profile_svc
 from app.services.draft import InvalidStateError, bundle_for
 
 EDIT_REVIEW_STAGE = "edit_review"
-EDIT_REVIEW_WORKERS = 4  # agenda items explained in parallel
+EDIT_REVIEW_WORKERS = 4  # model calls run in parallel
 
 
 def export_document(db: Session, run: DraftRun, template: bytes | None = None) -> ExportedDocument:
@@ -137,23 +138,6 @@ def request_classification(db: Session, document: EditedDocument) -> bool:
     return result.rowcount == 1
 
 
-def classify_in_background(
-    bind: Engine | Connection, document_id: uuid.UUID, llm: LLMClient
-) -> None:
-    """Run a queued classification after the response (FastAPI BackgroundTasks)."""
-    with Session(bind) as db:
-        document = db.get(EditedDocument, document_id)
-        if document is None or document.comparison is None:
-            return
-        try:
-            classify(db, llm, document)
-        except Exception as e:  # never leave it stuck as running
-            db.rollback()
-            document.comparison.classification_status = ClassificationStatus.FAILED
-            document.comparison.classification_error = str(e)
-            db.commit()
-
-
 def classify(db: Session, llm: LLMClient, document: EditedDocument) -> DocumentComparison | None:
     """Settle the cheap edits in code and explain the rest, one model call per agenda item."""
     row = document.comparison
@@ -189,12 +173,15 @@ def classify(db: Session, llm: LLMClient, document: EditedDocument) -> DocumentC
 
     classified = list(plan.by_rule)
     errors: list[str] = []
-    for request, outcome in _call_items(llm, plan.system, plan.requests):
+    prompts = [r.message for r in plan.requests]
+    for request, outcome in zip(
+        plan.requests, call_each(llm, plan.system, EditReview, prompts), strict=True
+    ):
         if isinstance(outcome, LLMError):
-            _record_failure(run, llm, plan.system, request, outcome)
+            record_failure(run, llm, EDIT_REVIEW_STAGE, plan.system, request.message, outcome)
             errors.append(f"item {request.section}: {outcome}")
             continue
-        _record_call(run, plan.system, request, outcome)
+        record_call(run, EDIT_REVIEW_STAGE, plan.system, request.message, outcome)
         classified += edit_review.accept_review(outcome.output, request, profile, bundle)
 
     wanted = [c for c in edit_review.ensure_change_ids(comparison) if edit_review.needs_review(c)]
@@ -209,57 +196,57 @@ def classify(db: Session, llm: LLMClient, document: EditedDocument) -> DocumentC
     return row
 
 
-def _call_items(
-    llm: LLMClient, system: str, requests: list[ItemRequest]
-) -> list[tuple[ItemRequest, LLMResponse[EditReview] | LLMError]]:
-    def call(request: ItemRequest) -> LLMResponse[EditReview] | LLMError:
+def call_each[T: BaseModel](
+    llm: LLMClient, system: str, schema: type[T], prompts: list[str]
+) -> list[LLMResponse[T] | LLMError]:
+    """One structured call per prompt, a few at a time, in prompt order."""
+
+    def call(prompt: str) -> LLMResponse[T] | LLMError:
         try:
             return llm.generate_structured(
-                request.message,
-                schema=EditReview,
+                prompt,
+                schema=schema,
                 system=system,
                 max_tokens=settings.minutes_max_output_tokens,
             )
         except LLMError as e:
             return e
 
-    if not requests:
+    if not prompts:
         return []
-    with ThreadPoolExecutor(max_workers=min(EDIT_REVIEW_WORKERS, len(requests))) as pool:
-        return list(zip(requests, pool.map(call, requests), strict=True))
+    with ThreadPoolExecutor(max_workers=min(EDIT_REVIEW_WORKERS, len(prompts))) as pool:
+        return list(pool.map(call, prompts))
 
 
-def _record_call(
-    run: DraftRun, system: str, request: ItemRequest, r: LLMResponse[EditReview]
-) -> None:
+def record_call(run: DraftRun, stage: str, system: str, prompt: str, r: LLMResponse[Any]) -> None:
     run.llm_calls.append(
         LLMCall(
-            stage=EDIT_REVIEW_STAGE,
+            stage=stage,
             provider=r.provider,
             model=r.model,
             input_tokens=r.usage.input_tokens,
             output_tokens=r.usage.output_tokens,
             latency_ms=round(r.latency_ms),
             system_prompt=system,
-            prompt=request.message,
+            prompt=prompt,
             output=r.output.model_dump_json(),
         )
     )
 
 
-def _record_failure(
-    run: DraftRun, llm: LLMClient, system: str, request: ItemRequest, e: LLMError
+def record_failure(
+    run: DraftRun, llm: LLMClient, stage: str, system: str, prompt: str, e: LLMError
 ) -> None:
     raw = e.raw_text if isinstance(e, LLMOutputValidationError) else None
     run.llm_calls.append(
         LLMCall(
-            stage=EDIT_REVIEW_STAGE,
+            stage=stage,
             provider=llm.provider.name,
             model=llm.model,
             ok=False,
             error=str(e),
             raw_output=raw[:20_000] if raw else None,
             system_prompt=system,
-            prompt=request.message,
+            prompt=prompt,
         )
     )

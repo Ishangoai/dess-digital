@@ -23,6 +23,7 @@ from app.minutes.edit_review import (
     build_result,
     classify_by_rule,
     date_format_change,
+    figure_corrected,
     group_patterns,
     name_replaced_by_role,
     plan_review,
@@ -151,8 +152,30 @@ def test_name_rule_uses_ws4(profile_content: ProfileContent) -> None:
     assert settled is not None and settled.cause == EditCause.PROFILE_SILENT_OR_DIFFERENT
 
 
+@pytest.mark.parametrize(
+    ("original", "edited", "expected"),
+    [
+        ("The Board approved £1.2m.", "The Board approved £1.3m.", True),
+        ("Income was £900k for the year, comprising £300k and £600k.",
+         "Income was £800k for six months (£300k and £500k), giving £900k for the year.", True),
+        ("Fees were £300k and costs £600k.", "Costs were £600k and fees £300k.", False),  # moved
+        ("The Board approved the plan.", "The Board approved the plan, costing £2m.", False),
+        ("Met on 8 May.", "Met on 9 May.", True),
+    ],
+)  # fmt: skip
+def test_figure_corrected(original: str, edited: str, expected: bool) -> None:
+    assert figure_corrected(original, edited) is expected
+
+
+def test_figure_rule_is_a_factual_correction(profile_content: ProfileContent) -> None:
+    c = change("The Board approved £1.2m.", "The Board approved £1.3m.")
+    settled = classify_by_rule(c, profile_content, PEOPLE)
+    assert settled is not None
+    assert (settled.kind, settled.route) == (EditKind.FACTUAL_CORRECTION, Route.DRAFT_MISTAKE)
+
+
 def test_other_edits_go_to_the_model(profile_content: ProfileContent) -> None:
-    c = change("The Board approved £1.2 million.", "The Board approved £1.3 million.")
+    c = change("The Board approved the plan.", "The Board approved the revised plan.")
     assert classify_by_rule(c, profile_content, PEOPLE) is None
 
 
@@ -196,7 +219,7 @@ def test_plan_sends_one_request_per_item(profile_content: ProfileContent) -> Non
     )  # fmt: skip
     roof = change(
         "The Board approved phase one only, capped at £1.2 million.",
-        "The Board approved phase one, capped at £1.3 million.",
+        "The Board approved phase one, capped at £1.2 million, subject to review.",
         pid="4.p2",
         change_id="C2",
         comment_ids=["0"],

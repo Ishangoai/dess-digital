@@ -294,12 +294,49 @@ export interface EditClassification {
 	unclassified: string[];
 }
 
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type ProposalStatus = 'proposed' | 'accepted' | 'rejected' | 'deferred';
+
+export interface AmendmentProposal {
+	id: string;
+	pattern_id: string;
+	change_ids: string[];
+	dimension: string;
+	dimension_title: string;
+	operation: 'add' | 'replace' | 'remove';
+	target_rule_id: string | null;
+	current_text: string | null;
+	text: string | null;
+	proposed_text: string | null;
+	kind: string;
+	overlap: 'none' | 'duplicate' | 'conflict';
+	overlap_with: string | null;
+	reason: string;
+	refused: string | null;
+	status: ProposalStatus;
+	decided_by: string | null;
+	decided_at: string | null;
+}
+
+export interface AmendmentSet {
+	id: string;
+	status: JobStatus;
+	error: string | null;
+	profile_slug: string;
+	profile_name: string;
+	base_version: number;
+	applied_version: number | null;
+	applied_at: string | null;
+	proposals: AmendmentProposal[];
+}
+
 export interface EditedDocument extends EditedDocumentSummary {
 	comparison: Comparison;
-	classification_status: 'pending' | 'running' | 'completed' | 'failed' | null;
+	classification_status: JobStatus | null;
 	classification_error: string | null;
 	classified_at: string | null;
 	classification: EditClassification | null;
+	amendments: AmendmentSet | null;
 }
 
 export const EDIT_KIND_LABELS: Record<EditKind, string> = {
@@ -474,6 +511,16 @@ export const api = {
 		json<EditedDocument>(f(`/api/drafts/${id}/edited-document`)),
 	classifyEdits: (id: string) =>
 		json<EditedDocument>(post(`/api/drafts/${id}/edited-document/classify`)),
+	updateAmendment: (id: string, proposalId: string, change: { status?: ProposalStatus; text?: string }) =>
+		json<AmendmentProposal>(
+			fetch(`/api/drafts/${id}/amendments/${proposalId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ...change, by: 'web-ui' })
+			})
+		),
+	applyAmendments: (id: string) =>
+		json<EditedDocument>(post(`/api/drafts/${id}/amendments/apply`, { by: 'web-ui' })),
 	uploadEdited: (id: string, file: File) => {
 		const form = new FormData();
 		form.append('file', file);
@@ -586,6 +633,10 @@ export const STAGE_INFO: Record<string, { label: string; about: string }> = {
 	edit_review: {
 		label: 'Explain the edits',
 		about: "Explains each of the professional's edits for one agenda item and sorts it by cause."
+	},
+	amendment: {
+		label: 'Propose a rule change',
+		about: 'Turns one kind of edit into a change to the Minutes Profile and checks it against the existing rules.'
 	},
 	reconsideration: {
 		label: 'Reconsider',
